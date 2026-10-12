@@ -354,7 +354,7 @@ document.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('clic
 $('#ghost').addEventListener('change', renderStage);
 
 const commands = {
-  new() { if (!confirm('Start a new, empty lesson? (Your current lesson stays in undo history until you reload.)')) return; edit(() => { project = { title: 'Untitled lesson', bg: '#0e1116', version: 1, slides: [{ id: uid(), name: 'Slide 1', notes: '', objects: [] }] }; cur = 0; sel = null; }); renderAll(); },
+  new() { edit(() => { project = { title: 'Untitled lesson', bg: '#0e1116', version: 1, slides: [{ id: uid(), name: 'Slide 1', notes: '', objects: [] }] }; cur = 0; sel = null; }); renderAll(); toast('Started a new lesson. Undo (Ctrl+Z) brings the old one back.'); },
   demo() { edit(() => { project = demoProject(); cur = 0; sel = null; }); renderAll(); },
   open() { $('#fileInput').click(); },
   save() {

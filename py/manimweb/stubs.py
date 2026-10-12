@@ -36,7 +36,7 @@ def install():
         "moderngl", "moderngl_window", "moderngl_window.context", "moderngl_window.context.pyglet",
         "moderngl_window.context.pyglet.window", "moderngl_window.timers", "moderngl_window.timers.clock",
         "av", "av.audio", "av.audio.stream", "av.video", "av.video.stream", "av.container",
-        "pathops", "audioop", "pydub", "pydub.utils", "srt", "screeninfo", "watchdog",
+        "audioop", "pydub", "pydub.utils", "srt", "screeninfo", "watchdog",
         "watchdog.events", "watchdog.observers",
     ]:
         if name not in sys.modules:

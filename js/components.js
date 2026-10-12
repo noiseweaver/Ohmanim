@@ -126,8 +126,9 @@ export function wirePts(o) {
 
 // ---- general shapes --------------------------------------------------------
 def('text', {
-  name: 'Text', cat: 'Text', noLabel: true, defaults: { text: 'Text', size: 48, color: '#ffffff' },
-  props: [{ key: 'text', label: 'Text', type: 'text' }, { key: 'size', label: 'Font size', type: 'number', step: 2 }],
+  name: 'Text', cat: 'Text', noLabel: true, defaults: { text: 'Text', size: 48, color: '#ffffff', font: '', bold: false, italic: false },
+  props: [{ key: 'text', label: 'Text', type: 'text' }, { key: 'font', label: 'Font', type: 'font' }, { key: 'size', label: 'Font size', type: 'number', step: 2 },
+    { key: 'bold', label: 'Bold', type: 'bool' }, { key: 'italic', label: 'Italic', type: 'bool' }],
   prims: (o) => [T(0, 0, o.text, o.size)],
 });
 def('math', {

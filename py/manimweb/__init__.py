@@ -20,11 +20,12 @@ def install():
     global _installed
     if _installed:
         return
-    from . import cairo_shim, pango_shim, stubs
+    from . import cairo_shim, pango_shim, pathops_shim, stubs
 
     stubs.install()
     cairo_shim.install()
     pango_shim.install()
+    pathops_shim.install()
     import manim  # noqa: F401  (import with shims in place)
 
     _patch()

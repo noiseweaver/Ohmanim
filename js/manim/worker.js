@@ -13,8 +13,9 @@ const MANIM_VERSION = '0.21.0';
 // Pure-Python dependencies Manim imports. numpy, scipy, Pillow etc. come from Pyodide's own builds.
 const PURE_DEPS = ['numpy', 'scipy', 'pillow', 'networkx', 'fonttools', 'beautifulsoup4', 'pygments', 'rich', 'cloup',
   'click', 'isosurfaces', 'svgelements', 'tqdm', 'typing-extensions', 'decorator'];
-const SHIM_FILES = ['manimweb/__init__.py', 'manimweb/cairo_shim.py', 'manimweb/pango_shim.py', 'manimweb/stubs.py'];
-const FONT_FILES = ['DejaVuSans.ttf', 'DejaVuSans-Bold.ttf', 'DejaVuSansMono.ttf'];
+const SHIM_FILES = ['manimweb/__init__.py', 'manimweb/cairo_shim.py', 'manimweb/pango_shim.py', 'manimweb/pathops_shim.py', 'manimweb/stubs.py'];
+let fontList = []; // fonts/fonts.json
+const fontsLoaded = new Set();
 
 let pyodide = null;
 let booting = null;
@@ -35,10 +36,14 @@ async function boot() {
   await micropip.install(`manim==${MANIM_VERSION}`, { deps: false });
   status('Loading the browser shims…');
   const FS = pyodide.FS;
-  for (const d of ['/manimweb', '/manimweb/manimweb', '/manimweb/fonts']) try { FS.mkdir(d); } catch {}
+  for (const d of ['/manimweb', '/manimweb/manimweb', '/manimweb/fonts', '/manimweb/fonts/files']) try { FS.mkdir(d); } catch {}
   await Promise.all([
     ...SHIM_FILES.map(async (f) => FS.writeFile('/manimweb/' + f, await (await fetch(new URL('py/' + f, base))).text())),
-    ...FONT_FILES.map(async (f) => FS.writeFile('/manimweb/fonts/' + f, new Uint8Array(await (await fetch(new URL('py/fonts/' + f, base))).arrayBuffer()))),
+    (async () => {
+      const json = await (await fetch(new URL('fonts/fonts.json', base))).text();
+      fontList = JSON.parse(json);
+      FS.writeFile('/manimweb/fonts/fonts.json', json);
+    })(),
   ]);
   status('Starting Manim…');
   await pyodide.runPythonAsync(`
@@ -70,6 +75,11 @@ async function render({ code, width, height, fps, tex }) {
     }
   };
 
+  await loadFontsFor(code);
+  if (/\b(Union|Intersection|Difference|Exclusion)\s*\(/.test(code)) {
+    status('Loading Shapely for shape operations…');
+    await pyodide.loadPackage('shapely');
+  }
   status('Rendering with Manim…');
   pyodide.globals.set('_mv_sink', sink);
   pyodide.globals.set('_mv_code', code);
@@ -96,6 +106,20 @@ _res
   }
   const out = await enc.finish();
   post({ type: 'done', ...out, mime: 'video/mp4', scene: result.scene, codec: enc.codec }, [out.mp4]);
+}
+
+// Copy the TTFs a scene names (plus DejaVu Sans, the default and fallback) into Python's filesystem.
+async function loadFontsFor(code) {
+  const wanted = fontList.filter((f) => f.file === 'DejaVuSans' || code.includes(f.family));
+  const files = wanted.flatMap((f) => [f.file + '-Regular.ttf', ...(f.bold ? [f.file + '-Bold.ttf'] : [])]).filter((f) => !fontsLoaded.has(f));
+  if (!files.length) return;
+  status('Loading fonts…');
+  await Promise.all(files.map(async (f) => {
+    const res = await fetch(new URL('fonts/files/' + f, base));
+    if (!res.ok) throw new Error('Could not load font ' + f);
+    pyodide.FS.writeFile('/manimweb/fonts/files/' + f, new Uint8Array(await res.arrayBuffer()));
+    fontsLoaded.add(f);
+  }));
 }
 
 self.onmessage = async (e) => {

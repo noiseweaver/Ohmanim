@@ -11,10 +11,11 @@ Everything runs in the browser, including Manim itself.
 1. **Editor and live preview.** Objects are drawn as SVG in Manim's own coordinate system (a 14.2 × 8 frame, y up). Animations are approximated instantly so you can arrange and rehearse.
 2. **Real Manim, in a Web Worker.** "Render video" runs unmodified [Manim Community Edition](https://www.manim.community/) under [Pyodide](https://pyodide.org/) (CPython compiled to WebAssembly). Manim's native dependencies are replaced by small pure-Python stand-ins in `py/manimweb/`:
    - **Cairo** becomes a recorder: Manim's camera draws as usual and every path, bezier curve, colour and gradient is replayed on an `OffscreenCanvas` (Canvas 2D has the same drawing model).
-   - **Pango** (used by `Text`) becomes [fontTools](https://github.com/fonttools/fonttools) laying out glyphs from bundled DejaVu fonts, using Pango's metrics so sizes match a normal install.
+   - **Pango** (used by `Text`) becomes [fontTools](https://github.com/fonttools/fonttools) laying out glyphs from the fonts in `fonts/` (18 open families: sans, serif, mono and handwritten), using Pango's metrics so sizes match a normal install. Characters a font lacks fall back to DejaVu Sans.
    - **LaTeX** (used by `MathTex` and `Tex`) becomes [MathJax](https://www.mathjax.org/): the scene runs once to collect every formula, MathJax typesets them on the page, and the scene runs again with SVG shaped like dvisvgm's output. `MathTex` parts, `get_part_by_tex` and colouring by part keep working.
    - **PyAV/ffmpeg** becomes [WebCodecs](https://developer.mozilla.org/docs/Web/API/WebCodecs_API) plus [mp4-muxer](https://github.com/Vanilagy/mp4-muxer), producing an MP4 you can download.
-   - OpenGL, sound and boolean path operations are stubbed; scenes that need them won't render.
+   - **skia-pathops** (used by `Union`, `Intersection`, `Difference`, `Exclusion`) becomes [Shapely](https://shapely.readthedocs.io/) (GEOS), loaded only when a scene uses them. Results are fine polylines rather than exact curves.
+   - OpenGL and sound are stubbed; scenes that need them won't render.
 3. **Presenting.** After a render, Present plays the Manim video and pauses at every `next_slide()`, like manim-slides. If the slides changed since the last render, it falls back to the live preview.
 4. **Code.** The Code button shows the generated script. You can edit it, or paste any Manim scene, and render that instead. The same file also renders on a computer with `manim` or `manim-slides`.
 

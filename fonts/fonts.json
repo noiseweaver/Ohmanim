@@ -1,0 +1,110 @@
+[
+ {
+  "family": "DejaVu Sans",
+  "group": "Sans",
+  "file": "DejaVuSans",
+  "bold": true
+ },
+ {
+  "family": "Atkinson Hyperlegible",
+  "group": "Sans",
+  "file": "AtkinsonHyperlegible",
+  "bold": true
+ },
+ {
+  "family": "Lexend",
+  "group": "Sans",
+  "file": "Lexend",
+  "bold": true
+ },
+ {
+  "family": "Nunito",
+  "group": "Sans",
+  "file": "Nunito",
+  "bold": true
+ },
+ {
+  "family": "Open Sans",
+  "group": "Sans",
+  "file": "OpenSans",
+  "bold": true
+ },
+ {
+  "family": "Roboto",
+  "group": "Sans",
+  "file": "Roboto",
+  "bold": true
+ },
+ {
+  "family": "Source Sans 3",
+  "group": "Sans",
+  "file": "SourceSans3",
+  "bold": true
+ },
+ {
+  "family": "Fira Sans",
+  "group": "Sans",
+  "file": "FiraSans",
+  "bold": true
+ },
+ {
+  "family": "Lato",
+  "group": "Sans",
+  "file": "Lato",
+  "bold": true
+ },
+ {
+  "family": "DejaVu Serif",
+  "group": "Serif",
+  "file": "DejaVuSerif",
+  "bold": true
+ },
+ {
+  "family": "Merriweather",
+  "group": "Serif",
+  "file": "Merriweather",
+  "bold": true
+ },
+ {
+  "family": "EB Garamond",
+  "group": "Serif",
+  "file": "EBGaramond",
+  "bold": true
+ },
+ {
+  "family": "DejaVu Sans Mono",
+  "group": "Mono",
+  "file": "DejaVuSansMono",
+  "bold": true
+ },
+ {
+  "family": "JetBrains Mono",
+  "group": "Mono",
+  "file": "JetBrainsMono",
+  "bold": true
+ },
+ {
+  "family": "Fira Code",
+  "group": "Mono",
+  "file": "FiraCode",
+  "bold": true
+ },
+ {
+  "family": "Caveat",
+  "group": "Handwritten",
+  "file": "Caveat",
+  "bold": true
+ },
+ {
+  "family": "Patrick Hand",
+  "group": "Handwritten",
+  "file": "PatrickHand",
+  "bold": false
+ },
+ {
+  "family": "Comic Neue",
+  "group": "Handwritten",
+  "file": "ComicNeue",
+  "bold": true
+ }
+]

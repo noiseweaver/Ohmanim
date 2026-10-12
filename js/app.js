@@ -1,5 +1,5 @@
 import { REG, CATEGORIES, ENTER_ANIMS, EMPH_ANIMS, makeObject, uid, checkExpr } from './components.js';
-import { worldPrims, primsSVG, objectSVG, bbox, timeline, FRAME_W, FRAME_H } from './render.js';
+import { worldPrims, primsSVG, objectSVG, bbox, timeline, fonts, DEFAULT_FONT, FRAME_W, FRAME_H } from './render.js';
 import { Player, applyBeat, stateSVG } from './player.js';
 import { exportPython } from './export.js';
 import { demoProject } from './demo.js';
@@ -7,6 +7,26 @@ import { renderCode, warmUp, onEngine } from './manim/engine.js';
 
 const $ = (s) => document.querySelector(s);
 const STORE = 'manimvis.project.v1';
+
+// Bundled fonts (fonts/fonts.json). @font-face rules let the browser fetch a
+// family only when something on screen uses it. The "MV " prefix keeps them
+// from replacing fonts the page UI asks for by name (e.g. Roboto).
+let FONTS = [];
+try { FONTS = await (await fetch('fonts/fonts.json')).json(); } catch { FONTS = [{ family: DEFAULT_FONT, group: 'Sans', file: 'DejaVuSans', bold: true }]; }
+{
+  const css = FONTS.map((f) => `@font-face{font-family:'MV ${f.family}';src:url(fonts/files/${f.file}-Regular.ttf) format('truetype');font-weight:400;font-display:swap}` +
+    (f.bold ? `@font-face{font-family:'MV ${f.family}';src:url(fonts/files/${f.file}-Bold.ttf) format('truetype');font-weight:700;font-display:swap}` : '')).join('\n');
+  const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
+}
+function fontOptions(value, inheritLabel) {
+  let h = inheritLabel ? `<option value=""${!value ? ' selected' : ''}>${inheritLabel}</option>` : '';
+  for (const g of [...new Set(FONTS.map((f) => f.group))]) {
+    h += `<optgroup label="${g}">` + FONTS.filter((f) => f.group === g).map((f) => `<option value="${f.family}"${f.family === value ? ' selected' : ''} style="font-family:'MV ${f.family}'">${f.family}</option>`).join('') + '</optgroup>';
+  }
+  return h;
+}
+// Redraw once fonts arrive so previews and hit boxes use the real glyphs.
+document.fonts?.addEventListener?.('loadingdone', () => { renderStage(); renderSlides(); });
 const clone = (x) => JSON.parse(JSON.stringify(x));
 const round = (v, s) => Math.round(v / s) * s;
 const fx = (v) => Math.round(v * 1000) / 1000;
@@ -256,7 +276,8 @@ function addSlide(dup) {
 function field(label, key, type, value, extra = {}) {
   const id = 'f_' + key;
   let input;
-  if (type === 'select') input = `<select id="${id}" data-key="${key}">${extra.options.map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${v}"${v === value ? ' selected' : ''}>${t}</option>`; }).join('')}</select>`;
+  if (type === 'font') input = `<select id="${id}" data-key="${key}">${fontOptions(value, 'inherit' in extra ? extra.inherit : `Lesson font (${fonts.lesson})`)}</select>`;
+  else if (type === 'select') input = `<select id="${id}" data-key="${key}">${extra.options.map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${v}"${v === value ? ' selected' : ''}>${t}</option>`; }).join('')}</select>`;
   else if (type === 'bool') input = `<input type="checkbox" id="${id}" data-key="${key}"${value ? ' checked' : ''}>`;
   else if (type === 'textarea') input = `<textarea id="${id}" data-key="${key}" placeholder="${extra.placeholder || ''}">${escapeHTML(value ?? '')}</textarea>`;
   else input = `<input id="${id}" data-key="${key}" type="${type}" value="${escapeHTML(value ?? '')}"${extra.step ? ` step="${extra.step}"` : ''}${extra.min != null ? ` min="${extra.min}"` : ''}${extra.placeholder ? ` placeholder="${extra.placeholder}"` : ''}>`;
@@ -273,7 +294,7 @@ function renderInspector() {
       ${field('Name', 'name', 'text', s.name)}
       ${field('Speaker notes', 'notes', 'textarea', s.notes, { placeholder: 'Shown in presenter mode and exported to manim-slides' })}
       </div>
-      <h4>Lesson</h4><div class="sec" data-scope="project">${field('Background', 'bg', 'color', project.bg || '#000000')}</div>
+      <h4>Lesson</h4><div class="sec" data-scope="project">${field('Background', 'bg', 'color', project.bg || '#000000')}${field('Font', 'font', 'font', project.font || DEFAULT_FONT, { inherit: null })}</div>
       <div class="note">
         <b>How slides animate</b><br>
         Objects appear with their <i>Enter</i> animation, grouped by <i>Step</i>; each step is one click.<br><br>
@@ -318,7 +339,7 @@ $('#inspector').addEventListener('input', (e) => {
   const key = el.dataset.key, v = readInput(el);
   if (v === null) return;
   if (scope === 'slide') { edit(() => (slide()[key] = v), 'slide' + key); renderSlides(); return; }
-  if (scope === 'project') { edit(() => (project[key] = v), 'proj' + key); renderStage(); renderSlides(); return; }
+  if (scope === 'project') { edit(() => (project[key] = v), 'proj' + key); fonts.lesson = project.font || DEFAULT_FONT; renderStage(); renderSlides(); return; }
   const o = selected();
   if (!o) return;
   edit(() => { o[key] = key === 'step' ? Math.max(1, Math.round(v)) : v; }, o.id + key);
@@ -650,6 +671,7 @@ document.addEventListener('keydown', (e) => {
 
 // ---- boot --------------------------------------------------------------------------
 function renderAll() {
+  fonts.lesson = project.font || DEFAULT_FONT;
   $('#title').value = project.title || '';
   renderSlides(); renderStage(); renderInspector();
 }

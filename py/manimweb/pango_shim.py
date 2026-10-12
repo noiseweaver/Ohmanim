@@ -15,22 +15,38 @@ from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
 
-FONT_DIR = os.environ.get("MANIMWEB_FONTS", os.path.join(os.path.dirname(__file__), "..", "fonts"))
-_FILES = {
-    ("sans", False): "DejaVuSans.ttf",
-    ("sans", True): "DejaVuSans-Bold.ttf",
-    ("mono", False): "DejaVuSansMono.ttf",
-    ("mono", True): "DejaVuSansMono.ttf",
-}
+FONT_DIR = os.environ.get("MANIMWEB_FONTS", os.path.join(os.path.dirname(__file__), "..", "..", "fonts"))
+DEFAULT_FAMILY = "DejaVu Sans"
+_GENERIC = {"": "DejaVu Sans", "sans": "DejaVu Sans", "sans-serif": "DejaVu Sans", "serif": "DejaVu Serif",
+            "mono": "DejaVu Sans Mono", "monospace": "DejaVu Sans Mono"}
+_registry = None
 _cache = {}
 
 
+def _families():
+    global _registry
+    if _registry is None:
+        import json
+        with open(os.path.join(FONT_DIR, "fonts.json")) as f:
+            _registry = {e["family"].lower(): e for e in json.load(f)}
+    return _registry
+
+
+def _resolve(family):
+    reg = _families()
+    name = (family or "").strip()
+    name = _GENERIC.get(name.lower(), name)
+    return reg.get(name.lower()) or reg[DEFAULT_FAMILY.lower()]
+
+
 def _font(family, bold):
-    fam = "mono" if family and "mono" in family.lower() else "sans"
-    key = (fam, bool(bold))
+    entry = _resolve(family)
+    use_bold = bool(bold) and entry.get("bold")
+    key = (entry["file"], use_bold)
     if key not in _cache:
-        f = TTFont(os.path.join(FONT_DIR, _FILES[key]), lazy=True)
-        _cache[key] = (f, f.getGlyphSet(), f.getBestCmap(), f["hmtx"], f["head"].unitsPerEm, f["hhea"])
+        f = TTFont(os.path.join(FONT_DIR, "files", f"{entry['file']}-{'Bold' if use_bold else 'Regular'}.ttf"), lazy=True)
+        # synthetic bold when the family has no bold file
+        _cache[key] = (f, f.getGlyphSet(), f.getBestCmap(), f["hmtx"], f["head"].unitsPerEm, f["hhea"], bool(bold) and not use_bold)
     return _cache[key]
 
 
@@ -45,7 +61,7 @@ class Alignment:
 
 
 def list_fonts():
-    return ["DejaVu Sans", "DejaVu Sans Mono", "Sans", "Monospace"]
+    return [e["family"] for e in _families().values()] + ["Sans", "Serif", "Monospace"]
 
 
 def register_font(path):
@@ -69,25 +85,28 @@ def _layout(runs, size, line_spacing, start_x, start_y):
     ascent = f0[5].ascent / f0[4] * px
     line_h = (line_spacing * 4 / 3) if line_spacing and line_spacing > 0 else (f0[5].ascent - f0[5].descent + f0[5].lineGap) / f0[4] * px
     for text, family, bold, italic, color, line in runs:
-        font, gs, cmap, hmtx, upem, _ = _font(family, bold)
-        s = px / upem
+        main = _font(family, bold)
         x = x_by_line.get(line, start_x)
         base = start_y + ascent + line * line_h
         fill = color or "#ffffff"
         for ch in text:
             if ch == "\n":
                 continue
-            gname = cmap.get(ord(ch)) or cmap.get(ord("?"))
-            adv = hmtx[gname][0] * s if gname else px * 0.5
+            font, gs, cmap, hmtx, upem, _, fake_bold = main
+            gname = cmap.get(ord(ch))
+            if gname is None and not ch.isspace():
+                # fall back to DejaVu Sans for characters this font lacks (e.g. Ω)
+                font, gs, cmap, hmtx, upem, _, fake_bold = _font(DEFAULT_FAMILY, bold)
+                gname = cmap.get(ord(ch)) or cmap.get(ord("?"))
+            s = px / upem
+            adv = hmtx[gname][0] * s if gname else px * 0.3
             if not ch.isspace() and gname:
                 pen = SVGPathPen(gs)
                 skew = 0.2 if italic else 0.0
                 gs[gname].draw(TransformPen(pen, (s, 0, -skew * s, -s, x, base)))
                 d = pen.getCommands()
-                if d:
-                    paths.append(f'<path d="{d}" fill="{html.escape(fill)}"/>')
-                else:
-                    paths.append('<path d="M 0 0" fill="none"/>')
+                stroke = f' stroke="{html.escape(fill)}" stroke-width="{px * 0.04:.3f}"' if fake_bold else ""
+                paths.append(f'<path d="{d}" fill="{html.escape(fill)}"{stroke}/>' if d else '<path d="M 0 0" fill="none"/>')
             x += adv
         x_by_line[line] = x
     return "\n".join(paths)

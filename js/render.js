@@ -7,6 +7,10 @@ export const FRAME_W = 14.222222, FRAME_H = 8;
 export const SW_UNIT = 0.01;   // Manim: stroke_width 4 ≈ 0.04 scene units
 export const EM = 0.0144;      // scene units of 1em per font_size point (measured from Manim Text)
 export const LABEL_SIZE = 32;
+export const DEFAULT_FONT = 'DejaVu Sans';
+// The lesson-wide font (set by the editor); objects with no font of their own use it.
+export const fonts = { lesson: DEFAULT_FONT };
+export const fontOf = (o) => o.font || fonts.lesson;
 
 const d2r = (d) => (d * Math.PI) / 180;
 
@@ -49,18 +53,24 @@ export function worldPrims(o) {
       out.push({ k: 'path', pts: pts.map(tf), closed: true, stroke, sw, fill, fo });
     } else if (p.t === 'text' || p.t === 'math') {
       const [x, y] = tf([p.x, p.y]);
-      out.push({ k: p.t, x, y, text: p.text, size: p.size * s, rot: o.rot || 0, color: o.color });
+      out.push({ k: p.t, x, y, text: p.text, size: p.size * s, rot: o.rot || 0, color: o.color, font: fontOf(o), bold: !!o.bold, italic: !!o.italic });
     }
   }
   if (o.label && !d.noLabel) {
     const [x, y] = labelPos(o);
-    out.push({ k: 'text', x, y, text: o.label, size: LABEL_SIZE, rot: 0, color: o.color, label: true });
+    out.push({ k: 'text', x, y, text: o.label, size: LABEL_SIZE, rot: 0, color: o.color, label: true, font: fonts.lesson });
   }
   return out;
 }
 
+let measureCtx = null;
 export function textBox(p) {
   const em = p.size * EM;
+  if (p.k !== 'math' && typeof document !== 'undefined') {
+    measureCtx ||= document.createElement('canvas').getContext('2d');
+    measureCtx.font = `${p.italic ? 'italic ' : ''}${p.bold ? '700 ' : ''}100px 'MV ${p.font || DEFAULT_FONT}', 'MV DejaVu Sans', sans-serif`;
+    return { w: (measureCtx.measureText(p.text).width / 100) * em, h: em * 1.1 };
+  }
   const w = p.k === 'math' ? em * 0.5 * Math.max(1, p.text.replace(/\\[a-z]+|[{}^_ ]/gi, 'x').length) : em * 0.52 * Math.max(1, p.text.length);
   return { w, h: em * 1.1 };
 }
@@ -129,7 +139,7 @@ export function primsSVG(prims, opts = {}) {
         out += `<g transform="translate(${f(p.x)} ${f(-p.y)})${rot} scale(0.01)"${op}><foreignObject x="-1500" y="-400" width="3000" height="800">` +
           `<div xmlns="http://www.w3.org/1999/xhtml" class="mathfo" style="font-size:${f(em * 100 * 0.82)}px;color:${p.color}">${html}</div></foreignObject></g>`;
       } else {
-        out += `<g transform="translate(${f(p.x)} ${f(-p.y)})${rot}"${op}><text x="0" y="0" font-size="${f(em)}" fill="${p.color}" text-anchor="middle" dominant-baseline="central"${p.k === 'math' ? ' font-style="italic" font-family="serif"' : ''}>${esc(p.text)}</text></g>`;
+        out += `<g transform="translate(${f(p.x)} ${f(-p.y)})${rot}"${op}><text x="0" y="0" font-size="${f(em)}" fill="${p.color}" text-anchor="middle" dominant-baseline="central"${p.k === 'math' ? ' font-style="italic" font-family="serif"' : ` font-family="'MV ${esc(p.font || DEFAULT_FONT)}', 'MV DejaVu Sans', sans-serif"${p.bold ? ' font-weight="700"' : ''}${p.italic ? ' font-style="italic"' : ''}`}>${esc(p.text)}</text></g>`;
       }
       if (opts.hit) { const { w, h } = textBox(p); out += `<rect class="hit" x="${f(p.x - w / 2)}" y="${f(-p.y - h / 2)}" width="${f(w)}" height="${f(h)}" fill="transparent"/>`; }
     }

@@ -35,5 +35,5 @@ export function demoProject() {
     id: 's3', name: 'Close the switch', notes: 'Current flows, the capacitor voltage rises and levels off at V.',
     objects: [{ ...s2.objects[0], text: 'Close the switch' }, ...closed, graph, xl, yl, formula],
   };
-  return { title: 'RC Circuit', bg: '#0e1116', version: 1, slides: [s1, s2, s3] };
+  return { title: 'RC Circuit', bg: '#0e1116', font: 'Atkinson Hyperlegible', version: 1, slides: [s1, s2, s3] };
 }

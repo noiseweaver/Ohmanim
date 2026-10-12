@@ -1,11 +1,11 @@
 // Offline support: the app shell is cached on install; everything else (Pyodide,
-// Python packages and KaTeX from the CDN) is cached the first time it loads. Bump VERSION to ship updates.
-const VERSION = 'mv-4';
+// Python packages from the CDN, KaTeX fonts) is cached the first time it loads. Bump VERSION to ship updates.
+const VERSION = 'mv-5';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png',
   'js/app.js', 'js/components.js', 'js/render.js', 'js/player.js', 'js/export.js', 'js/demo.js',
   'js/manim/engine.js', 'js/manim/worker.js', 'js/manim/encode.js', 'js/manim/draw.js', 'js/manim/tex.js',
-  'vendor/mp4-muxer.mjs', 'vendor/mathjax-tex-svg-full.js',
+  'vendor/mp4-muxer.mjs', 'vendor/mathjax-tex-svg-full.js', 'vendor/katex/katex.min.js', 'vendor/katex/katex.min.css',
   'py/manimweb/__init__.py', 'py/manimweb/cairo_shim.py', 'py/manimweb/pango_shim.py', 'py/manimweb/stubs.py', 'py/manimweb/pathops_shim.py',
   'fonts/fonts.json', 'fonts/files/DejaVuSans-Regular.ttf', 'fonts/files/DejaVuSans-Bold.ttf',
 ];

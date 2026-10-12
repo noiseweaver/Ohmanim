@@ -90,6 +90,7 @@
           <button id="tlToggle" class="icon" title="Show or hide the timeline" aria-label="Show or hide the timeline" aria-expanded="true"><svg class="ic" aria-hidden="true"><use href="#i-chevron-down"/></svg></button>
           <span class="tl-title">Timeline</span>
           <span class="tl-sub" id="tlSub"></span>
+          <button id="tlGroup" class="tl-groupbtn" disabled><svg class="ic" aria-hidden="true"><use href="#i-group"/></svg><span>Group tracks</span></button>
           <span class="grow"></span>
           <span class="tl-legend"><i class="k-enter"></i>Enter <i class="k-morph"></i>Morph <i class="k-emph"></i>Emphasis <i class="k-out"></i>Fade out</span>
         </div>
@@ -198,6 +199,18 @@
       <div id="themeList" class="themelist"></div>
       <div class="row wrap">
         <label class="chk"><input type="checkbox" id="followSystem"> Switch between light and dark with the system</label>
+        <span class="grow"></span>
+        <button value="close" class="accent"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span>Done</span></button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="slideThemeDlg">
+    <form method="dialog" class="dlg">
+      <h2>Slide theme</h2>
+      <p class="help">Colours every slide in this lesson: the background, the ink that circuits and plain text use, and a colour for each text style (Title, Heading 1–3, Body, Caption). Give text a style in the inspector or add it from the Text menu. Colours you picked yourself stay as they are, and Undo puts everything back.</p>
+      <div id="slideThemeList" class="themelist slides-themes"></div>
+      <div class="row wrap">
         <span class="grow"></span>
         <button value="close" class="accent"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span>Done</span></button>
       </div>

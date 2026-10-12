@@ -5,7 +5,8 @@ import { exportPython } from './export.js';
 import { demoProject } from './demo.js';
 import { renderCode, warmUp, onEngine } from './manim/engine.js';
 import { icon, installIcons } from './icons.js';
-import { THEMES, STYLES, loadLook, saveLook, applyLook, themeSwatch } from './themes.js';
+import { pop, flash, appear, flip, shake } from './motion.js';
+import { THEMES, STYLES, loadLook, saveLook, applyLook, themeSwatch, TEXT_ROLES, applySlideTheme, applyRole, slideSwatch, slidePalette } from './themes.js';
 
 installIcons();
 let look = loadLook();
@@ -76,7 +77,7 @@ function restore(snap) { const s = JSON.parse(snap); project = s.project; cur = 
 function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); restore(undoStack.pop()); lastCoalesce = null; }
 function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); restore(redoStack.pop()); lastCoalesce = null; }
 
-function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 2200); }
+function toast(msg) { const t = $('#toast'); t.textContent = msg; if (t.hidden) pop(t, 'bottom'); t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 2200); }
 
 // ---- stage -------------------------------------------------------------------
 const stage = $('#stage');
@@ -278,16 +279,19 @@ function staggered() {
   const n = slide().objects.length % 6;
   return [(n - 2.5) * 0.5, -n * 0.25];
 }
+function appearObj(id) { const g = $(`#objLayer > g[data-id="${CSS.escape(id)}"]`); appear(g); flash($(`#timeline .tl-name[data-row="${CSS.escape(id)}"]`)); }
 function addObject(type, x, y) {
   edit(() => {
     if (x == null) [x, y] = staggered();
     const o = makeObject(type, { x, y });
+    if (project.ink && (o.color || '').toLowerCase() === '#ffffff') { o.color = project.ink; if ((o.fill || '').toLowerCase() === '#ffffff') o.fill = project.ink; }
     if (REG[type].ends) { o.x -= o.dx / 2; o.y -= o.dy / 2; o.x = snap(o.x); o.y = snap(o.y); }
     if (!REG[type].noLabel && o.label) o.label = nextLabel(o.label);
     slide().objects.push(o);
     setSelection([o.id]);
   });
   renderAll();
+  appearObj(sel);
 }
 function nextLabel(prefix) {
   const used = new Set(project.slides.flatMap((s) => s.objects.map((o) => o.label)));
@@ -339,6 +343,7 @@ function addLibraryShape(id, x, y) {
     setSelection([o.id]);
   });
   renderAll();
+  appearObj(sel);
 }
 
 function openSaveShape() {
@@ -372,6 +377,7 @@ $('#shapeForm').addEventListener('submit', (e) => {
   saveLibrary();
   $('#shapeDlg').close();
   renderPalette();
+  flash($(`#catBar [data-cat="${CSS.escape(cat)}"]`));
   toast(`Saved "${name}" to ${cat}`);
 });
 
@@ -416,6 +422,11 @@ function renderPalette() {
       const items = Object.values(REG).filter((d) => d.cat === cat && d.sub === sub && match(d.name));
       if (items.length) body += `<h4>${sub}</h4><div class="items">${items.map(item).join('')}</div>`;
     }
+    if (cat === 'Text') {
+      const roles = TEXT_ROLES.filter((r) => r.id && match(r.name));
+      const pal = slidePalette(project.slideTheme);
+      if (roles.length) body += `<h4>Styles</h4><div class="items">${roles.map((r) => `<button data-addrole="${r.id}" title="Add ${r.name} text"><svg viewBox="0 0 60 30"><text x="30" y="21" text-anchor="middle" font-size="${Math.round(r.size / 3.2)}" font-weight="${r.bold ? 700 : 400}" fill="${pal[r.id]}">Aa</text></svg><span>${r.name}</span></button>`).join('')}</div>`;
+    }
     const mine = library.shapes.filter((s) => s.category === cat && match(s.name));
     if (mine.length) body += `<h4>${icon('bookmark-plus')}Saved</h4><div class="items">${mine.map(libItem).join('')}</div>`;
     if (!body) return q ? '' : `<p class="empty">Nothing here yet. Select objects on a slide and choose <b>Save as shape</b> to add them to ${escapeHTML(cat)}.</p>`;
@@ -442,7 +453,7 @@ function openShelf(cat) {
   $('#shelf').hidden = !cat;
   $('#shelf').classList.remove('dragging');
   renderPalette();
-  if (cat) placeShelf();
+  if (cat) { placeShelf(); pop($('#shelf'), $('#shelf').style.bottom ? 'bottom' : 'top'); }
 }
 $('#catBar').addEventListener('click', (e) => {
   const b = e.target.closest('[data-cat]');
@@ -467,6 +478,19 @@ $('#palette').addEventListener('click', (e) => {
   }
   const lib = e.target.closest('[data-lib]');
   if (lib) { openShelf(null); return addLibraryShape(lib.dataset.lib); }
+  const role = e.target.closest('[data-addrole]');
+  if (role) {
+    openShelf(null);
+    const r = TEXT_ROLES.find((x) => x.id === role.dataset.addrole);
+    edit(() => {
+      const [x, y] = staggered();
+      const o = makeObject('text', { x, y, text: r.name === 'Body' || r.name === 'Caption' ? r.name + ' text' : r.name });
+      applyRole(project, o, r.id);
+      slide().objects.push(o); setSelection([o.id]);
+    });
+    renderAll();
+    return;
+  }
   const b = e.target.closest('[data-add]');
   if (!b) return;
   openShelf(null);
@@ -512,7 +536,7 @@ function thumbSVG(s) {
   return `<svg viewBox="-7.1111 -4 14.2222 8"><rect x="-7.12" y="-4" width="14.23" height="8" fill="${project.bg || '#000'}"/>${s.objects.map((o) => objectSVG(o)).join('')}</svg>`;
 }
 function renderSlides() {
-  $('#slideList').innerHTML = project.slides.map((s, i) => `<li data-i="${i}"${i === cur ? ' class="on"' : ''}>
+  $('#slideList').innerHTML = project.slides.map((s, i) => `<li data-i="${i}" data-key="${s.id || 'i' + i}"${i === cur ? ' class="on"' : ''}>
     <span class="thumb">${thumbSVG(s)}</span><div class="name">${escapeHTML(s.name || 'Untitled')}</div>
     <span class="ops"><button data-op="up" title="Move up" aria-label="Move up">${icon('arrow-up')}</button><button data-op="down" title="Move down" aria-label="Move down">${icon('arrow-down')}</button><button data-op="del" title="Delete slide" aria-label="Delete slide">${icon('trash-2')}</button></span></li>`).join('');
 }
@@ -523,15 +547,24 @@ $('#slideList').addEventListener('click', (e) => {
   const i = +li.dataset.i;
   const op = e.target.closest('[data-op]')?.dataset.op;
   if (op === 'del') {
-    if (project.slides.length === 1) return toast('A lesson needs at least one slide');
-    edit(() => { project.slides.splice(i, 1); cur = Math.min(cur, project.slides.length - 1); setSelection([]); });
-  } else if (op === 'up' && i > 0) {
-    edit(() => { const [s] = project.slides.splice(i, 1); project.slides.splice(i - 1, 0, s); cur = i - 1; });
-  } else if (op === 'down' && i < project.slides.length - 1) {
-    edit(() => { const [s] = project.slides.splice(i, 1); project.slides.splice(i + 1, 0, s); cur = i + 1; });
-  } else if (!op) { cur = i; setSelection([]); }
-  renderAll();
+    if (project.slides.length === 1) { shake(li); return toast('A lesson needs at least one slide'); }
+    const go = () => { edit(() => { project.slides.splice(i, 1); cur = Math.min(cur, project.slides.length - 1); setSelection([]); }); flip($('#slideList'), renderAll); switchFx(); };
+    const a = li.animate?.([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(-24px) scale(.9)' }], { duration: 160, easing: 'ease-in' });
+    if (a && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) a.onfinish = go; else go();
+    return;
+  }
+  if (op === 'up' && i > 0) edit(() => { const [s] = project.slides.splice(i, 1); project.slides.splice(i - 1, 0, s); cur = i - 1; });
+  else if (op === 'down' && i < project.slides.length - 1) edit(() => { const [s] = project.slides.splice(i, 1); project.slides.splice(i + 1, 0, s); cur = i + 1; });
+  else if (op) { shake(li); return; }
+  else { if (cur === i) return; cur = i; setSelection([]); }
+  flip($('#slideList'), renderAll);
+  if (!op) switchFx();
 });
+// A quick cross-fade on the canvas when the slide changes.
+function switchFx() {
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  $('#stage').animate([{ opacity: 0.25, transform: 'scale(.985)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'ease-out' });
+}
 function addSlide(dup) {
   edit(() => {
     const s = dup ? { ...clone(slide()), id: uid(), name: (slide().name || 'Slide') + ' (next)', notes: '' }
@@ -540,7 +573,9 @@ function addSlide(dup) {
     project.slides.splice(cur + 1, 0, s);
     cur++; setSelection([]);
   });
-  renderAll();
+  flip($('#slideList'), renderAll);
+  switchFx();
+  $('#slideList li.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   if (dup) toast('Duplicated: move or change things and they will animate from the previous slide');
 }
 
@@ -564,7 +599,7 @@ function renderInspector() {
     $('#inspTitle').textContent = `${many.length} selected`;
     const same = many.every((q) => q.color === many[0].color);
     box.innerHTML = `<div class="sec" data-scope="multi">${field('Colour', 'color', 'color', same ? many[0].color : '#ffffff')}</div>
-      <div class="btnrow"><button data-act="group" class="accent">${icon('group')}Group</button><button data-act="saveShape">${icon('bookmark-plus')}Save as shape</button></div>
+      <div class="btnrow"><button data-act="group" class="accent">${icon('group')}Group</button><button data-act="saveShape">${icon('bookmark-plus')}Save as shape</button><button data-act="tgroup" title="Group their tracks in the timeline; the objects stay separate">${icon('folder')}Group in timeline</button></div>
       <div class="btnrow"><button data-act="rotate">${icon('rotate-cw')}Rotate 90°</button><button data-act="dup">${icon('copy')}Duplicate</button><button data-act="del">${icon('trash-2')}Delete</button></div>
       <div class="help">Shift-click or drag a box to change the selection. <kbd>Ctrl G</kbd> groups.</div>`;
     return;
@@ -577,6 +612,7 @@ function renderInspector() {
       ${field('Speaker notes', 'notes', 'textarea', s.notes, { placeholder: 'Shown in presenter mode and exported to manim-slides' })}
       </div>
       <h4>Lesson</h4><div class="sec" data-scope="project">${field('Background', 'bg', 'color', project.bg || '#000000')}${field('Font', 'font', 'font', project.font || DEFAULT_FONT, { inherit: null })}</div>
+      <button type="button" class="slidetheme" data-slideact="theme">${slideSwatch(project.slideTheme)}<span><b>Slide theme</b><br>${escapeHTML(project.slideTheme ? THEMES.find((t) => t.id === project.slideTheme)?.name || 'Custom' : 'Your own colours')}</span></button>
       <div class="note">
         <b>How slides animate</b><br>
         The <i>timeline</i> under the canvas shows every animation on this slide: one track per object and one column per click. Drag a block to another click, click it to change the animation, or use <b>+</b> to add an emphasis.<br><br>
@@ -591,6 +627,7 @@ function renderInspector() {
   let h = '';
   if (isCarried) h += `<div class="note carry">Continues from the previous slide. Changes you make here animate as a smooth transform.</div>`;
   h += '<div class="sec" data-scope="obj">';
+  if (o.type === 'text' || o.type === 'math') h += field('Style', 'role', 'select', o.role || '', { options: TEXT_ROLES.map((r) => [r.id, r.name]) });
   for (const p of d.props || []) h += field(p.label, p.key, p.type, o[p.key], p);
   if (!d.noLabel) h += field('Label', 'label', 'text', o.label);
   if (o.type !== 'group') h += `<div class="pair">${field('Colour', 'color', 'color', o.color)}${d.fillable ? field('Fill', 'fill', 'color', o.fill) : ''}</div>`;
@@ -630,19 +667,21 @@ $('#inspector').addEventListener('input', (e) => {
   if (scope === 'project') { edit(() => (project[key] = v), 'proj' + key); fonts.lesson = project.font || DEFAULT_FONT; renderStage(); renderSlides(); return; }
   const o = selected();
   if (!o) return;
-  if (key === 'recolor') edit(() => recolor(o, v), o.id + key);
+  if (key === 'role') edit(() => applyRole(project, o, v));
+  else if (key === 'recolor') edit(() => recolor(o, v), o.id + key);
   else if (key === 'emph' || key === 'emphStep') edit(() => {
     const em = emphList(o).map((e) => ({ ...e }));
     if (key === 'emph') { if (v === 'None') em.shift(); else if (em[0]) em[0].anim = v; else em.unshift({ anim: v, step: o.step || 1 }); }
     else if (em[0]) em[0].step = Math.max(1, Math.round(v));
     o.emphs = em; delete o.emph;
   }, o.id + key);
-  else edit(() => { o[key] = key === 'step' ? Math.max(1, Math.round(v)) : v; }, o.id + key);
+  else edit(() => { o[key] = key === 'step' ? Math.max(1, Math.round(v)) : v; if (key === 'color' && o.role) o.role = undefined; }, o.id + key);
   renderStage(); renderSlides();
   if (el.tagName === 'SELECT' || el.type === 'checkbox' || key === 'fx') renderInspector();
   renderTimeline();
 });
 $('#inspector').addEventListener('click', (e) => {
+  if (e.target.closest('[data-slideact="theme"]')) { renderSlideThemes(); $('#slideThemeDlg').showModal(); return; }
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (act) objAction(act);
 });
@@ -652,6 +691,7 @@ function objAction(act) {
   const o = objs[0];
   const rot = (q, back) => { if (REG[q.type].ends) { [q.dx, q.dy] = back ? [q.dy, -q.dx] : [-q.dy, q.dx]; } else q.rot = ((q.rot || 0) + (back ? 270 : 90)) % 360; };
   if (act === 'saveShape') return openSaveShape();
+  if (act === 'tgroup') return groupTracks();
   if (act === 'del') edit(() => { slide().objects = slide().objects.filter((q) => !isSel(q.id)); setSelection([]); });
   if (act === 'rotate' || act === 'rotateBack') {
     const back = act === 'rotateBack';
@@ -703,6 +743,7 @@ function objAction(act) {
 function setTool(t) {
   tool = t;
   document.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === t || (t === 'wire' && b.dataset.tool === 'select')));
+  if (t === 'wire' && $('#wireChip').hidden) requestAnimationFrame(() => appear($('#wireChip')));
   $('#wireChip').hidden = t !== 'wire';
   stage.classList.toggle('wire', t === 'wire');
   stage.classList.toggle('draw', t === 'draw');
@@ -1030,9 +1071,9 @@ function renderTimeline() {
       ? `<div class="tl-step" data-step="${k}">Click ${k}<button data-playstep="${k}" title="Play click ${k}" aria-label="Play click ${k}">${icon('play')}</button></div>`
       : `<div class="tl-step new" data-step="${k}">New click</div>`;
   }
-  const row = (o, gone) => {
+  const row = (o, gone, inGroup) => {
     const selC = !gone && isSel(o.id) ? ' tl-row-sel' : '';
-    let r = `<div class="tl-name${selC}${gone ? ' gone' : ''}" data-row="${o.id}" title="${escapeHTML(objName(o))}">${iconFor({ ...o, x: 0, y: 0, label: '', color: 'currentColor', fill: 'currentColor' }).replace('<svg', '<svg class="thumbic"')}<span>${escapeHTML(objName(o))}${gone ? ' (leaves)' : ''}</span></div>`;
+    let r = `<div class="tl-name${selC}${gone ? ' gone' : ''}${inGroup ? ' ingroup' : ''}" data-row="${o.id}" title="${escapeHTML(objName(o))}">${iconFor({ ...o, x: 0, y: 0, label: '', color: 'currentColor', fill: 'currentColor' }).replace('<svg', '<svg class="thumbic"')}<span>${escapeHTML(objName(o))}${gone ? ' (leaves)' : ''}</span></div>`;
     for (let k = 1; k <= cols; k++) {
       const here = blocks.filter((b) => b.id === o.id && b.step === k);
       r += `<div class="tl-cell${selC}" data-row="${o.id}" data-step="${k}">` +
@@ -1041,9 +1082,75 @@ function renderTimeline() {
     }
     return r;
   };
-  for (const o of s.objects) h += row(o, false);
+  // timeline groups: a header row with one summary block per click, then its tracks
+  const groups = trackGroups();
+  const groupOf = new Map(groups.flatMap((g) => g.ids.map((id) => [id, g])));
+  const done = new Set();
+  const groupRows = (g) => {
+    const members = s.objects.filter((o) => g.ids.includes(o.id));
+    const allSel = members.every((o) => isSel(o.id));
+    let r = `<div class="tl-name tl-group${allSel ? ' tl-row-sel' : ''}" data-group="${g.id}" title="${escapeHTML(g.name)}">` +
+      `<button class="gtoggle" data-gtoggle="${g.id}" aria-label="${g.collapsed ? 'Expand' : 'Collapse'} ${escapeHTML(g.name)}" aria-expanded="${!g.collapsed}">${icon('chevron-down')}</button>` +
+      `${icon('folder')}<span>${escapeHTML(g.name)}</span><em>${members.length}</em></div>`;
+    for (let k = 1; k <= cols; k++) {
+      const n = blocks.filter((b) => g.ids.includes(b.id) && b.step === k).length;
+      r += `<div class="tl-cell tl-group" data-row="g:${g.id}" data-step="${k}">` +
+        (n ? `<span class="blk grp" data-kind="group" data-id="g:${g.id}" data-i="${k}" title="${n} animation${n === 1 ? '' : 's'} in ${escapeHTML(g.name)}: drag to move them all to another click">${n} animation${n === 1 ? '' : 's'}</span>` : '') + '</div>';
+    }
+    if (!g.collapsed) for (const o of members) r += row(o, false, true);
+    return r;
+  };
+  for (const o of s.objects) {
+    if (done.has(o.id)) continue;
+    const g = groupOf.get(o.id);
+    if (g) { g.ids.forEach((id) => done.add(id)); h += groupRows(g); }
+    else h += row(o, false);
+  }
   for (const p of leaving) h += row(p, true);
   box.innerHTML = h + '</div>';
+  const nSel = selectionIds().length;
+  $('#tlGroup').disabled = nSel < 2;
+  $('#tlGroup').title = nSel < 2 ? 'Select two or more tracks (shift-click their names) to group them' : `Group the ${nSel} selected tracks in the timeline`;
+}
+
+// Timeline groups only organise tracks; the objects stay separate on the slide.
+function trackGroups() {
+  const s = slide();
+  const ids = new Set(s.objects.map((o) => o.id));
+  // Prune in place so references held by an open menu stay live.
+  s.tgroups = (s.tgroups || []).filter((g) => { g.ids = g.ids.filter((id) => ids.has(id)); return g.ids.length; });
+  return s.tgroups;
+}
+function groupTracks() {
+  const ids = selectionIds();
+  if (ids.length < 2) return toast('Select two or more tracks first (shift-click their names)');
+  let gid = uid();
+  edit(() => {
+    const s = slide();
+    s.tgroups = trackGroups().map((g) => ({ ...g, ids: g.ids.filter((id) => !ids.includes(id)) })).filter((g) => g.ids.length);
+    s.tgroups.push({ id: gid, name: 'Group ' + (s.tgroups.length + 1), ids, collapsed: false });
+  });
+  renderTimeline();
+  const el = $(`#timeline [data-group="${gid}"]`);
+  if (el) { flash(el); openGroupMenu(gid, el.getBoundingClientRect(), true); }
+}
+function openGroupMenu(gid, rect, rename = false) {
+  const g = trackGroups().find((x) => x.id === gid);
+  if (!g) return;
+  const m = $('#tlMenu');
+  m.innerHTML = `<div class="mh">Timeline group</div><input id="gName" value="${escapeHTML(g.name)}" aria-label="Group name" maxlength="40">` +
+    `<button data-gsel>${icon('mouse-pointer-2')}Select its objects</button><button data-gungroup>${icon('ungroup')}Ungroup tracks</button>`;
+  showMenu(rect);
+  if (rename) { $('#gName').focus(); $('#gName').select(); }
+  $('#gName').addEventListener('input', (e) => { edit(() => (g.name = e.target.value || 'Group'), 'gname' + gid); renderTimeline(); });
+  $('#gName').addEventListener('keydown', (e) => { if (e.key === 'Enter') m.hidden = true; });
+  m.onclick = (e) => {
+    const t = e.target.closest('button');
+    if (!t) return;
+    m.hidden = true;
+    if ('gsel' in t.dataset) { setSelection(g.ids.slice()); renderStage(); renderInspector(); renderTimeline(); }
+    if ('gungroup' in t.dataset) { edit(() => (slide().tgroups = trackGroups().filter((x) => x.id !== gid))); renderTimeline(); }
+  };
 }
 
 // Renumber clicks so they run 1, 2, 3… with no empty columns.
@@ -1060,19 +1167,29 @@ function compactSteps() {
   if (s.outSteps) for (const id in s.outSteps) s.outSteps[id] = m(s.outSteps[id]);
 }
 
-function setBlockStep(b, k) {
+function moveBlock(b, k) {
   const s = slide(), o = s.objects.find((q) => q.id === b.id);
+  if (b.kind === 'enter') o.step = k;
+  else if (b.kind === 'morph') o.mstep = k;
+  else if (b.kind === 'emph') { o.emphs = emphList(o).map((e) => ({ ...e })); o.emphs[b.i].step = k; delete o.emph; }
+  else if (b.kind === 'out') (s.outSteps ||= {})[b.id] = k;
+}
+function setBlockStep(b, k) {
   edit(() => {
-    if (b.kind === 'enter') o.step = k;
-    else if (b.kind === 'morph') o.mstep = k;
-    else if (b.kind === 'emph') { o.emphs = emphList(o).map((e) => ({ ...e })); o.emphs[b.i].step = k; delete o.emph; }
-    else if (b.kind === 'out') (s.outSteps ||= {})[b.id] = k;
+    if (b.kind === 'group') {
+      // every animation of the group's tracks on that click moves together
+      const g = trackGroups().find((x) => 'g:' + x.id === b.id);
+      slideBlocks().filter((x) => g.ids.includes(x.id) && x.step === b.step).forEach((x) => moveBlock(x, k));
+    } else moveBlock(b, k);
     compactSteps();
   });
   renderTimeline(); renderInspector(); renderSlides();
+  const moved = b.kind === 'group' ? $(`#timeline .tl-cell[data-row="${CSS.escape(b.id)}"][data-step="${k}"] .blk`) : null;
+  flash(moved || $(`#timeline .tl-cell[data-row="${CSS.escape(b.id)}"][data-step="${k}"]`));
 }
 
-const blockOf = (el) => slideBlocks().find((b) => b.kind === el.dataset.kind && b.id === el.dataset.id && String(b.i ?? '') === el.dataset.i);
+const blockOf = (el) => el.dataset.kind === 'group' ? { kind: 'group', id: el.dataset.id, step: +el.dataset.i }
+  : slideBlocks().find((b) => b.kind === el.dataset.kind && b.id === el.dataset.id && String(b.i ?? '') === el.dataset.i);
 
 let tlDrag = null;
 $('#timeline').addEventListener('pointerdown', (e) => {
@@ -1105,7 +1222,7 @@ const endTlDrag = (e) => {
   d.ghost?.remove(); d.el.classList.remove('lifting');
   document.querySelectorAll('.tl-cell.drop').forEach((c) => c.classList.remove('drop'));
   if (!d.block) return;
-  if (!d.moved) return openBlockMenu(d.block, d.el.getBoundingClientRect());
+  if (!d.moved) return d.block.kind === 'group' ? openGroupMenu(d.block.id.slice(2), d.el.getBoundingClientRect()) : openBlockMenu(d.block, d.el.getBoundingClientRect());
   if (d.target && d.target !== d.block.step) setBlockStep(d.block, d.target);
 };
 $('#timeline').addEventListener('pointerup', endTlDrag);
@@ -1123,9 +1240,13 @@ $('#timeline').addEventListener('click', (e) => {
     setSelection([id]);
     renderAll();
     const el = $(`#timeline .blk[data-kind="emph"][data-id="${CSS.escape(id)}"][data-i="${idx}"]`);
-    if (el) openBlockMenu(blockOf(el), el.getBoundingClientRect());
+    if (el) { appear(el); openBlockMenu(blockOf(el), el.getBoundingClientRect()); }
     return;
   }
+  const gt = e.target.closest('[data-gtoggle]');
+  if (gt) { const g = trackGroups().find((x) => x.id === gt.dataset.gtoggle); g.collapsed = !g.collapsed; persist(); renderTimeline(); return; }
+  const gname = e.target.closest('[data-group]');
+  if (gname) return openGroupMenu(gname.dataset.group, gname.getBoundingClientRect());
   const name = e.target.closest('.tl-name');
   if (name && !name.classList.contains('gone')) {
     const id = name.dataset.row;
@@ -1134,6 +1255,7 @@ $('#timeline').addEventListener('click', (e) => {
     renderStage(); renderInspector(); renderTimeline();
   }
 });
+$('#tlGroup').addEventListener('click', groupTracks);
 $('#tlToggle').addEventListener('click', () => {
   const box = $('#timelineBox');
   box.classList.toggle('collapsed');
@@ -1158,6 +1280,15 @@ try { if (localStorage.getItem('manimvis.timeline.collapsed')) $('#timelineBox')
   });
 }
 
+function showMenu(rect) {
+  const m = $('#tlMenu');
+  m.hidden = false;
+  const top = rect.bottom + 4 + m.offsetHeight > window.innerHeight ? rect.top - m.offsetHeight - 4 : rect.bottom + 4;
+  m.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - m.offsetWidth - 8)) + 'px';
+  m.style.top = Math.max(8, top) + 'px';
+  pop(m);
+}
+
 // Options for one animation block: change its animation, move it, or remove it.
 function openBlockMenu(b, rect) {
   const s = slide(), o = s.objects.find((q) => q.id === b.id);
@@ -1171,10 +1302,8 @@ function openBlockMenu(b, rect) {
   if ((b.kind === 'morph' && o?.mstep) || (b.kind === 'out' && s.outSteps?.[b.id])) h += `<button data-reset>${icon('rotate-ccw')}Back to slide start</button>`;
   if (b.kind === 'emph') h += `<hr><button data-remove>${icon('trash-2')}Remove emphasis</button>`;
   const m = $('#tlMenu');
-  m.innerHTML = h; m.hidden = false;
-  const top = rect.bottom + 4 + m.offsetHeight > window.innerHeight ? rect.top - m.offsetHeight - 4 : rect.bottom + 4;
-  m.style.left = Math.min(rect.left, window.innerWidth - m.offsetWidth - 8) + 'px';
-  m.style.top = Math.max(8, top) + 'px';
+  m.innerHTML = h;
+  showMenu(rect);
   m.onclick = (e) => {
     const t = e.target.closest('button');
     if (!t) return;
@@ -1209,11 +1338,25 @@ function renderLook() {
   $('#themeList').innerHTML = THEMES.map((t) => `<button type="button" data-theme="${t.id}" class="${t.id === look.theme ? 'on' : ''}" title="${escapeHTML(t.desc)}">${themeSwatch(t)}<span class="tn">${escapeHTML(t.name)}</span></button>`).join('');
   $('#followSystem').checked = !!look.follow;
 }
-function setLook(patch) { look = { ...look, ...patch }; saveLook(look); applyLook(look); renderLook(); }
+function setLook(patch) {
+  document.documentElement.classList.add('themeshift'); clearTimeout(setLook.t); setLook.t = setTimeout(() => document.documentElement.classList.remove('themeshift'), 450);
+  look = { ...look, ...patch }; saveLook(look); applyLook(look); renderLook();
+}
 $('#styleList').addEventListener('click', (e) => { const b = e.target.closest('[data-style]'); if (b) setLook({ style: b.dataset.style }); });
 $('#themeList').addEventListener('click', (e) => { const b = e.target.closest('[data-theme]'); if (b) setLook({ theme: b.dataset.theme }); });
 $('#followSystem').addEventListener('change', (e) => setLook({ follow: e.target.checked }));
 window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', () => look.follow && applyLook(look));
+
+// ---- slide themes ----------------------------------------------------------------------------
+function renderSlideThemes() {
+  $('#slideThemeList').innerHTML = THEMES.map((t) => `<button type="button" data-stheme="${t.id}" class="${t.id === project.slideTheme ? 'on' : ''}" title="${escapeHTML(t.desc)}">${slideSwatch(t.id)}<span class="tn">${escapeHTML(t.name)}</span></button>`).join('');
+}
+$('#slideThemeList').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-stheme]');
+  if (!b) return;
+  edit(() => applySlideTheme(project, b.dataset.stheme));
+  renderAll(); renderSlideThemes(); switchFx();
+});
 
 // ---- keyboard ------------------------------------------------------------------
 document.addEventListener('keydown', (e) => {

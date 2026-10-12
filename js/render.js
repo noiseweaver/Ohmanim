@@ -199,7 +199,7 @@ export function morphPrims(A, B, t) {
 // ---- timeline ----------------------------------------------------------------
 // A beat is what one click plays. Beats contain sequential phases; each phase
 // is a list of animations that run together (one `self.play(...)` in Manim).
-const stateKey = (o) => { const { enter, step, emph, emphs, mstep, name, ...rest } = o; return JSON.stringify(rest); };
+const stateKey = (o) => { const { enter, step, emph, emphs, mstep, name, role, ...rest } = o; return JSON.stringify(rest); };
 
 // An object's emphasis animations, each at its own step. Older lessons stored one `emph`
 // that played at the object's own step.

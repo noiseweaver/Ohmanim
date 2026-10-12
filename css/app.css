@@ -50,6 +50,24 @@ input[type=checkbox] { accent-color: var(--accent); }
 #palette button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px 4px; font-size: 10.5px; line-height: 1.15; color: var(--muted); }
 #palette button svg { width: 48px; height: 28px; }
 #palette button:hover { color: var(--text); }
+#palette details { border-bottom: 1px solid var(--line); }
+#palette summary { display: flex; align-items: center; gap: 6px; padding: 8px 2px; cursor: pointer; font-weight: 600; font-size: 12px; list-style: none; user-select: none; }
+#palette summary::-webkit-details-marker { display: none; }
+#palette summary::before { content: '▸'; color: var(--muted); font-size: 10px; transition: transform .15s; }
+#palette details[open] > summary::before { transform: rotate(90deg); }
+#palette summary .count { margin-left: auto; color: var(--muted); font-weight: 400; font-size: 11px; }
+#palette details > .items:last-child, #palette details > .empty:last-child { margin-bottom: 10px; }
+#palette h4 { font-size: 10.5px; color: var(--muted); margin: 6px 2px 5px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+#palette .empty { color: var(--muted); font-size: 11.5px; margin: 4px 2px 10px; line-height: 1.4; }
+#palette .libitem { position: relative; display: block; }
+#palette .libitem > button:first-child { width: 100%; }
+#palette .libitem .del { position: absolute; top: 2px; right: 2px; padding: 0 4px; font-size: 10px; line-height: 16px; display: none; background: var(--panel); }
+#palette .libitem:hover .del, #palette .libitem .del.armed { display: block; }
+#palette .libitem .del.armed { color: #fff; background: #b4343a; border-color: #b4343a; }
+.palette .search { padding: 0 8px 4px; }
+.palette .search input { width: 100%; }
+.libops { display: flex; gap: 4px; text-transform: none; letter-spacing: 0; }
+.libops button { padding: 1px 6px; font-size: 11px; font-weight: 400; }
 
 .stagewrap { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .stagebar { display: flex; align-items: center; gap: 12px; padding: 6px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
@@ -68,6 +86,10 @@ input[type=checkbox] { accent-color: var(--accent); }
 #objLayer > g.sel { filter: drop-shadow(0 0 .04px var(--sel)); }
 .selbox { fill: none; stroke: var(--sel); stroke-width: .02; stroke-dasharray: .08 .06; pointer-events: none; }
 .handle { fill: var(--sel); stroke: #000; stroke-width: .015; cursor: grab; }
+.marquee { fill: rgba(255,176,0,.07); stroke: var(--sel); stroke-width: .015; stroke-dasharray: .06 .05; pointer-events: none; }
+.drawline { fill: none; stroke: var(--sel); stroke-width: .03; stroke-dasharray: .1 .06; pointer-events: none; }
+.handle.first { fill: none; stroke: var(--sel); stroke-width: .03; }
+#stage.draw { cursor: crosshair; }
 .carried { fill: none; stroke: var(--accent2); stroke-width: .02; stroke-dasharray: .03 .05; pointer-events: none; }
 .mathfo { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; white-space: nowrap; }
 
@@ -100,6 +122,10 @@ dialog::backdrop { background: rgba(0,0,0,.55); }
 .dlg .help { margin: 0; color: var(--muted); white-space: pre-line; }
 .dlg code { background: #0f1217; padding: 1px 5px; border-radius: 4px; }
 #code { width: 100%; height: 50vh; font: 12px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: pre; }
+dialog.small { width: min(420px, 94vw); }
+.fld { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12px; }
+.shapeprev { background: var(--panel2); border-radius: 8px; height: 110px; display: flex; align-items: center; justify-content: center; }
+.shapeprev svg { max-width: 90%; height: 96px; }
 .row { display: flex; gap: 8px; align-items: center; }
 .grow { flex: 1; }
 

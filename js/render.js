@@ -33,6 +33,16 @@ export function labelPos(o) {
 export function worldPrims(o) {
   const d = REG[o.type];
   if (!d) return [];
+  if (o.type === 'group') {
+    // children live in the group's own coordinates; place them like any shape
+    const s = o.scale ?? 1, r = d2r(o.rot || 0), c = Math.cos(r), sn = Math.sin(r);
+    const tf = ([x, y]) => [o.x + s * (x * c - y * sn), o.y + s * (x * sn + y * c)];
+    return (o.children || []).flatMap(worldPrims).map((p) => {
+      if (p.k === 'path') return { ...p, pts: p.pts.map(tf) };
+      const [x, y] = tf([p.x, p.y]);
+      return { ...p, x, y, size: p.size * s, rot: (p.rot || 0) + (o.rot || 0) };
+    });
+  }
   const local = d.prims(o);
   const s = o.scale ?? 1, r = d2r(o.rot || 0), c = Math.cos(r), sn = Math.sin(r);
   const tf = ([x, y]) => [o.x + s * (x * c - y * sn), o.y + s * (x * sn + y * c)];

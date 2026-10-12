@@ -49,27 +49,27 @@ function def(type, d) { REG[type] = { type, ...d }; }
 const twoLead = { sw: 4, scale: 1 };
 
 def('resistor', {
-  name: 'Resistor', cat: 'Electronics', defaults: { ...twoLead, label: 'R' },
+  name: 'Resistor', sub: 'Passive', cat: 'Electronics', defaults: { ...twoLead, label: 'R' },
   prims: () => [L([-1, 0], [-0.6, 0], [-0.5, 0.2], [-0.3, -0.2], [-0.1, 0.2], [0.1, -0.2], [0.3, 0.2], [0.5, -0.2], [0.6, 0], [1, 0])],
 });
 def('capacitor', {
-  name: 'Capacitor', cat: 'Electronics', defaults: { ...twoLead, label: 'C' },
+  name: 'Capacitor', sub: 'Passive', cat: 'Electronics', defaults: { ...twoLead, label: 'C' },
   prims: () => [L([-1, 0], [-0.12, 0]), L([-0.12, -0.4], [-0.12, 0.4]), L([0.12, -0.4], [0.12, 0.4]), L([0.12, 0], [1, 0])],
 });
 def('inductor', {
-  name: 'Inductor', cat: 'Electronics', defaults: { ...twoLead, label: 'L' },
+  name: 'Inductor', sub: 'Passive', cat: 'Electronics', defaults: { ...twoLead, label: 'L' },
   prims: () => [L([-1, 0], [-0.6, 0]), ...[-0.45, -0.15, 0.15, 0.45].map((cx) => A(cx, 0, 0.15, Math.PI, -Math.PI)), L([0.6, 0], [1, 0])],
 });
 def('battery', {
-  name: 'Battery', cat: 'Electronics', defaults: { ...twoLead, label: 'V' },
+  name: 'Battery', sub: 'Sources', cat: 'Electronics', defaults: { ...twoLead, label: 'V' },
   prims: () => [L([-1, 0], [-0.12, 0]), L([-0.12, -0.45], [-0.12, 0.45]), P('stroke', [0.08, -0.22], [0.16, -0.22], [0.16, 0.22], [0.08, 0.22]), L([0.16, 0], [1, 0]), ...plus(-0.35, 0.4)],
 });
 def('vsource', {
-  name: 'DC source', cat: 'Electronics', defaults: { ...twoLead, label: 'V' },
+  name: 'DC source', sub: 'Sources', cat: 'Electronics', defaults: { ...twoLead, label: 'V' },
   prims: () => [L([-1, 0], [-0.45, 0]), C(0, 0, 0.45), L([0.45, 0], [1, 0]), ...plus(-0.2, 0), ...minus(0.2, 0)],
 });
 def('acsource', {
-  name: 'AC source', cat: 'Electronics', defaults: { ...twoLead, label: '' },
+  name: 'AC source', sub: 'Sources', cat: 'Electronics', defaults: { ...twoLead, label: '' },
   prims: () => {
     const wave = [];
     for (let i = 0; i <= 24; i++) { const t = i / 24; wave.push([-0.28 + 0.56 * t, 0.15 * Math.sin(t * TAU)]); }
@@ -77,44 +77,44 @@ def('acsource', {
   },
 });
 def('diode', {
-  name: 'Diode', cat: 'Electronics', defaults: { ...twoLead, label: 'D' },
+  name: 'Diode', sub: 'Semiconductors', cat: 'Electronics', defaults: { ...twoLead, label: 'D' },
   prims: () => [L([-1, 0], [-0.3, 0]), P('stroke', [-0.3, 0.3], [-0.3, -0.3], [0.25, 0]), L([0.25, -0.3], [0.25, 0.3]), L([0.25, 0], [1, 0])],
 });
 def('led', {
-  name: 'LED', cat: 'Electronics', defaults: { ...twoLead, label: 'LED' },
+  name: 'LED', sub: 'Semiconductors', cat: 'Electronics', defaults: { ...twoLead, label: 'LED' },
   prims: () => [L([-1, 0], [-0.3, 0]), P('stroke', [-0.3, 0.3], [-0.3, -0.3], [0.25, 0]), L([0.25, -0.3], [0.25, 0.3]), L([0.25, 0], [1, 0]),
     L([0.0, 0.35], [0.25, 0.6]), P('stroke', [0.25, 0.6], [0.13, 0.56], [0.21, 0.48]),
     L([0.2, 0.3], [0.45, 0.55]), P('stroke', [0.45, 0.55], [0.33, 0.51], [0.41, 0.43])],
 });
 def('switch', {
-  name: 'Switch', cat: 'Electronics', defaults: { ...twoLead, label: 'S', closed: false },
+  name: 'Switch', sub: 'Wiring', cat: 'Electronics', defaults: { ...twoLead, label: 'S', closed: false },
   props: [{ key: 'closed', label: 'Closed', type: 'bool' }],
   prims: (o) => [L([-1, 0], [-0.4, 0]), C(-0.4, 0, 0.06, 'stroke'), o.closed ? L([-0.4, 0], [0.4, 0.02]) : L([-0.4, 0], [0.3, 0.42]), C(0.4, 0, 0.06, 'stroke'), L([0.4, 0], [1, 0])],
 });
 def('lamp', {
-  name: 'Lamp', cat: 'Electronics', defaults: { ...twoLead, label: '' },
+  name: 'Lamp', sub: 'Passive', cat: 'Electronics', defaults: { ...twoLead, label: '' },
   prims: () => [L([-1, 0], [-0.4, 0]), C(0, 0, 0.4), L([-0.28, -0.28], [0.28, 0.28]), L([-0.28, 0.28], [0.28, -0.28]), L([0.4, 0], [1, 0])],
 });
 def('ground', {
-  name: 'Ground', cat: 'Electronics', defaults: { sw: 4, scale: 1, label: '' },
+  name: 'Ground', sub: 'Sources', cat: 'Electronics', defaults: { sw: 4, scale: 1, label: '' },
   prims: () => [L([0, 0.5], [0, 0]), L([-0.35, 0], [0.35, 0]), L([-0.22, -0.13], [0.22, -0.13]), L([-0.09, -0.26], [0.09, -0.26])],
 });
 def('npn', {
-  name: 'NPN transistor', cat: 'Electronics', defaults: { sw: 4, scale: 1, label: 'Q' },
+  name: 'NPN transistor', sub: 'Semiconductors', cat: 'Electronics', defaults: { sw: 4, scale: 1, label: 'Q' },
   prims: () => [C(0.2, 0, 0.62), L([-1, 0], [-0.15, 0]), L([-0.15, -0.35], [-0.15, 0.35]), L([-0.15, 0.15], [0.5, 0.5], [0.5, 1]),
     L([-0.15, -0.15], [0.5, -0.5], [0.5, -1]), P('stroke', [0.5, -0.5], [0.27, -0.47], [0.38, -0.3])],
 });
 def('opamp', {
-  name: 'Op-amp', cat: 'Electronics', defaults: { sw: 4, scale: 1, label: '' },
+  name: 'Op-amp', sub: 'Semiconductors', cat: 'Electronics', defaults: { sw: 4, scale: 1, label: '' },
   prims: () => [P(null, [-0.8, 0.9], [-0.8, -0.9], [0.9, 0]), L([-1.4, 0.45], [-0.8, 0.45]), L([-1.4, -0.45], [-0.8, -0.45]), L([0.9, 0], [1.4, 0]),
     ...minus(-0.6, 0.45), ...plus(-0.6, -0.45)],
 });
 def('node', {
-  name: 'Junction', cat: 'Electronics', defaults: { sw: 4, scale: 1 }, noLabel: true,
+  name: 'Junction', sub: 'Wiring', cat: 'Electronics', defaults: { sw: 4, scale: 1 }, noLabel: true,
   prims: () => [C(0, 0, 0.08, 'stroke')],
 });
 def('wire', {
-  name: 'Wire', cat: 'Electronics', ends: true, noLabel: true, defaults: { sw: 4, dx: 2, dy: 0, route: 'hv' },
+  name: 'Wire', sub: 'Wiring', cat: 'Electronics', ends: true, noLabel: true, defaults: { sw: 4, dx: 2, dy: 0, route: 'hv' },
   props: [{ key: 'route', label: 'Routing', type: 'select', options: [['hv', 'Horizontal first'], ['vh', 'Vertical first'], ['straight', 'Straight']] }],
   prims: (o) => [L(...wirePts(o))],
 });
@@ -126,33 +126,75 @@ export function wirePts(o) {
 
 // ---- general shapes --------------------------------------------------------
 def('text', {
-  name: 'Text', cat: 'Text', noLabel: true, defaults: { text: 'Text', size: 48, color: '#ffffff', font: '', bold: false, italic: false },
+  name: 'Text', sub: 'Text', cat: 'Text', noLabel: true, defaults: { text: 'Text', size: 48, color: '#ffffff', font: '', bold: false, italic: false },
   props: [{ key: 'text', label: 'Text', type: 'text' }, { key: 'font', label: 'Font', type: 'font' }, { key: 'size', label: 'Font size', type: 'number', step: 2 },
     { key: 'bold', label: 'Bold', type: 'bool' }, { key: 'italic', label: 'Italic', type: 'bool' }],
   prims: (o) => [T(0, 0, o.text, o.size)],
 });
 def('math', {
-  name: 'Math (LaTeX)', cat: 'Text', noLabel: true, defaults: { text: 'V = IR', size: 48, color: '#ffffff' },
+  name: 'Math (LaTeX)', sub: 'Text', cat: 'Text', noLabel: true, defaults: { text: 'V = IR', size: 48, color: '#ffffff' },
   props: [{ key: 'text', label: 'LaTeX', type: 'text' }, { key: 'size', label: 'Font size', type: 'number', step: 2 }],
   prims: (o) => [T(0, 0, o.text, o.size, true)],
 });
 def('circle', {
-  name: 'Circle', cat: 'Shapes', fillable: true, noLabel: true, defaults: { r: 1, color: '#58c4dd', fill: '#58c4dd', fo: 0 },
+  name: 'Circle', sub: 'Basic', cat: 'Shapes', fillable: true, noLabel: true, defaults: { r: 1, color: '#58c4dd', fill: '#58c4dd', fo: 0 },
   props: [{ key: 'r', label: 'Radius', type: 'number', step: 0.25 }],
   prims: (o) => [C(0, 0, o.r, 'shape')],
 });
 def('rect', {
-  name: 'Rectangle', cat: 'Shapes', fillable: true, noLabel: true, defaults: { w: 3, h: 2, color: '#83c167', fill: '#83c167', fo: 0 },
+  name: 'Rectangle', sub: 'Basic', cat: 'Shapes', fillable: true, noLabel: true, defaults: { w: 3, h: 2, color: '#83c167', fill: '#83c167', fo: 0 },
   props: [{ key: 'w', label: 'Width', type: 'number', step: 0.25 }, { key: 'h', label: 'Height', type: 'number', step: 0.25 }],
   prims: (o) => [P('shape', [-o.w / 2, o.h / 2], [-o.w / 2, -o.h / 2], [o.w / 2, -o.h / 2], [o.w / 2, o.h / 2])],
 });
 def('triangle', {
-  name: 'Triangle', cat: 'Shapes', fillable: true, noLabel: true, defaults: { r: 1, color: '#fc6255', fill: '#fc6255', fo: 0 },
+  name: 'Triangle', sub: 'Basic', cat: 'Shapes', fillable: true, noLabel: true, defaults: { r: 1, color: '#fc6255', fill: '#fc6255', fo: 0 },
   props: [{ key: 'r', label: 'Size', type: 'number', step: 0.25 }],
   prims: (o) => [P('shape', ...[90, 210, 330].map((d) => [o.r * Math.cos(d * Math.PI / 180), o.r * Math.sin(d * Math.PI / 180)]))],
 });
+def('ellipse', {
+  name: 'Ellipse', sub: 'Basic', cat: 'Shapes', fillable: true, noLabel: true, defaults: { w: 3, h: 1.6, color: '#9a72ac', fill: '#9a72ac', fo: 0 },
+  props: [{ key: 'w', label: 'Width', type: 'number', step: 0.25 }, { key: 'h', label: 'Height', type: 'number', step: 0.25 }],
+  prims: (o) => {
+    const pts = [];
+    for (let i = 0; i < 64; i++) { const a = (i / 64) * TAU; pts.push([(o.w / 2) * Math.cos(a), (o.h / 2) * Math.sin(a)]); }
+    return [P('shape', ...pts)];
+  },
+});
+def('ngon', {
+  name: 'Polygon', sub: 'Basic', cat: 'Shapes', fillable: true, noLabel: true, defaults: { r: 1, n: 6, color: '#e8c11c', fill: '#e8c11c', fo: 0 },
+  props: [{ key: 'n', label: 'Sides', type: 'number', step: 1, min: 3 }, { key: 'r', label: 'Size', type: 'number', step: 0.25 }],
+  prims: (o) => {
+    const n = Math.max(3, Math.min(64, Math.round(o.n || 6)));
+    return [P('shape', ...Array.from({ length: n }, (_, i) => { const a = Math.PI / 2 + (i / n) * TAU; return [o.r * Math.cos(a), o.r * Math.sin(a)]; }))];
+  },
+});
+def('star', {
+  name: 'Star', sub: 'Basic', cat: 'Shapes', fillable: true, noLabel: true, defaults: { r: 1, n: 5, inner: 0.45, color: '#ffff00', fill: '#ffff00', fo: 0 },
+  props: [{ key: 'n', label: 'Points', type: 'number', step: 1, min: 3 }, { key: 'r', label: 'Size', type: 'number', step: 0.25 }, { key: 'inner', label: 'Inner ratio', type: 'number', step: 0.05, min: 0.1 }],
+  prims: (o) => {
+    const n = Math.max(3, Math.min(32, Math.round(o.n || 5)));
+    return [P('shape', ...Array.from({ length: 2 * n }, (_, i) => { const a = Math.PI / 2 + (i / (2 * n)) * TAU, r = i % 2 ? o.r * o.inner : o.r; return [r * Math.cos(a), r * Math.sin(a)]; }))];
+  },
+});
+def('darrow', {
+  name: 'Double arrow', sub: 'Lines', cat: 'Shapes', ends: true, noLabel: true, defaults: { dx: 2, dy: 0, color: '#ffff00' },
+  prims: (o) => {
+    const len = Math.hypot(o.dx, o.dy) || 1e-6, ux = o.dx / len, uy = o.dy / len;
+    const tl = Math.min(0.35, 0.2 * len), tw = tl * 0.9;
+    const tip = (px, py, dx, dy) => { const bx = px - dx * tl, by = py - dy * tl; return P('stroke', [px, py], [bx - dy * tw / 2, by + dx * tw / 2], [bx + dy * tw / 2, by - dx * tw / 2]); };
+    return [L([ux * tl, uy * tl], [o.dx - ux * tl, o.dy - uy * tl]), tip(o.dx, o.dy, ux, uy), tip(0, 0, -ux, -uy)];
+  },
+});
+def('poly', {
+  name: 'Freeform', sub: 'Draw', cat: 'Shapes', fillable: true, noLabel: true, draw: true,
+  defaults: { pts: [[-1, -0.6], [1, -0.6], [0.4, 0.8]], closed: true, color: '#ffffff', fill: '#ffffff', fo: 0 },
+  props: [{ key: 'closed', label: 'Closed', type: 'bool' }],
+  prims: (o) => [o.closed ? P('shape', ...o.pts) : L(...o.pts)],
+});
+// A saved or grouped shape: children are ordinary objects in the group's own coordinates.
+def('group', { name: 'Group', sub: 'Group', cat: null, noLabel: true, defaults: {}, prims: () => [] });
 def('arrow', {
-  name: 'Arrow', cat: 'Shapes', ends: true, noLabel: true, defaults: { dx: 2, dy: 0, color: '#ffff00' },
+  name: 'Arrow', sub: 'Lines', cat: 'Shapes', ends: true, noLabel: true, defaults: { dx: 2, dy: 0, color: '#ffff00' },
   prims: (o) => {
     const len = Math.hypot(o.dx, o.dy) || 1e-6, ux = o.dx / len, uy = o.dy / len;
     const tl = Math.min(0.35, 0.25 * len), tw = tl * 0.9;
@@ -161,15 +203,15 @@ def('arrow', {
   },
 });
 def('line', {
-  name: 'Line', cat: 'Shapes', ends: true, noLabel: true, defaults: { dx: 2, dy: 0, color: '#ffffff' },
+  name: 'Line', sub: 'Lines', cat: 'Shapes', ends: true, noLabel: true, defaults: { dx: 2, dy: 0, color: '#ffffff' },
   prims: (o) => [L([0, 0], [o.dx, o.dy])],
 });
 def('dot', {
-  name: 'Dot', cat: 'Shapes', noLabel: true, defaults: { color: '#ffffff' },
+  name: 'Dot', sub: 'Lines', cat: 'Shapes', noLabel: true, defaults: { color: '#ffffff' },
   prims: () => [C(0, 0, 0.08, 'stroke')],
 });
 def('axes', {
-  name: 'Graph', cat: 'Graphs', noLabel: true,
+  name: 'Graph', sub: 'Plots', cat: 'Graphs', noLabel: true,
   defaults: { w: 6, h: 3.5, xmin: 0, xmax: 6, xstep: 1, ymin: -1.5, ymax: 1.5, ystep: 0.5, fx: 'sin(x)', gcolor: '#ffff00', color: '#bbbbbb', sw: 4 },
   props: [
     { key: 'fx', label: 'y = f(x)', type: 'text', hint: 'e.g. 5*(1-exp(-x)), sin(2*pi*x)' },
@@ -207,7 +249,12 @@ function ticks(a, b, s) {
   return out;
 }
 
-export const CATEGORIES = ['Electronics', 'Shapes', 'Text', 'Graphs'];
+export const CATEGORIES = [
+  { name: 'Electronics', subs: ['Passive', 'Sources', 'Semiconductors', 'Wiring'] },
+  { name: 'Shapes', subs: ['Basic', 'Lines', 'Draw'] },
+  { name: 'Text', subs: ['Text'] },
+  { name: 'Graphs', subs: ['Plots'] },
+];
 
 export const ENTER_ANIMS = ['Create', 'FadeIn', 'Write', 'GrowFromCenter', 'DrawBorderThenFill', 'None'];
 export const EMPH_ANIMS = ['None', 'Indicate', 'Circumscribe', 'Wiggle', 'Flash', 'FlowCurrent'];

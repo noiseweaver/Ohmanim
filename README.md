@@ -35,8 +35,11 @@ manim-slides RCCircuit                     # present
 - **Duplicate slide (⧉)** continues the scene. Objects keep their identity across slides, so anything you move, recolour, resize or change (such as closing a switch) morphs into its new state (`ReplacementTransform`), and anything you delete fades out. "Show previous slide" ghosts what will fade out.
 - **Emphasis** plays on an object at its step: Indicate, Circumscribe, Wiggle, Flash, or **Current flow** (a pulse travelling along a wire or component).
 - **Wires**: press `W` (or click Wire) and drag between terminals. Component terminals sit on the 0.5 grid so snapping lines them up.
+- **Palette**: shapes sit in collapsible categories (Electronics, Shapes, Text, Graphs) split into subsections, with a search box on top.
+- **Your own shapes**: select one or more objects (shift-click or drag a box), then **Save as shape**. Pick a category or make a new one; the shape appears under it in the palette, ready to click or drag into any lesson. Saved shapes live in this browser; **Export** / **Import** above the palette moves them between browsers or shares them as a JSON file. **Draw** (`P`) makes a freeform outline: click points, click the first point to close it, `Enter` or double-click to leave it open; drag its corner handles afterwards to reshape it.
+- **Groups**: `Ctrl+G` groups the selection into one object that moves, rotates, scales, animates and recolours together; `Ctrl+Shift+G` ungroups. Saved shapes are placed as groups.
 
-Shortcuts: `V` select, `W` wire, `R` / `Shift+R` rotate, `Del` delete, `Ctrl+D` duplicate, arrows nudge (`Shift` for 1 unit), `Ctrl+Z` / `Ctrl+Shift+Z`, `Ctrl+S` save, `F5` present. In the presenter: `→` / `Space` / click next, `←` back, `N` notes, `Esc` exit.
+Shortcuts: `V` select, `W` wire, `P` draw, `R` / `Shift+R` rotate, `Del` delete, `Ctrl+D` duplicate, `Ctrl+A` select all, `Ctrl+G` / `Ctrl+Shift+G` group / ungroup, arrows nudge (`Shift` for 1 unit), `Ctrl+Z` / `Ctrl+Shift+Z`, `Ctrl+S` save, `F5` present. In the presenter: `→` / `Space` / click next, `←` back, `N` notes, `Esc` exit.
 
 ## Files
 

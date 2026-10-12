@@ -45,7 +45,11 @@
     </aside>
 
     <aside class="palette panel">
-      <div class="panel-head"><span>Add</span></div>
+      <div class="panel-head"><span>Add</span>
+        <span class="libops"><button id="libImport" title="Import saved shapes from a file">Import</button><button id="libExport" title="Export your saved shapes to a file">Export</button></span>
+      </div>
+      <div class="search"><input id="paletteSearch" type="search" placeholder="Search shapes…" aria-label="Search shapes"></div>
+      <input type="file" id="libFile" accept=".json,application/json" hidden>
       <div id="palette"></div>
     </aside>
 
@@ -54,6 +58,7 @@
         <div class="seg" role="radiogroup" aria-label="Tool">
           <button data-tool="select" class="on" title="Select and move (V)">Select</button>
           <button data-tool="wire" title="Draw wires: drag from point to point (W)">Wire</button>
+          <button data-tool="draw" title="Draw your own shape: click points (P)">Draw</button>
         </div>
         <label class="chk"><input type="checkbox" id="snap" checked> Snap</label>
         <label class="chk"><input type="checkbox" id="ghost" checked> Show previous slide</label>
@@ -142,6 +147,22 @@
         <button type="button" id="presentVideoBtn" hidden class="primary">Present this render</button>
         <span class="grow"></span>
         <button value="close">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="shapeDlg" class="small">
+    <form id="shapeForm" class="dlg">
+      <h2>Save as shape</h2>
+      <p class="help">Adds the selection to the shape palette so you can reuse it in any lesson. Saved shapes stay in this browser; use Export to move them elsewhere.</p>
+      <div id="shapePreview" class="shapeprev"></div>
+      <label class="fld"><span>Name</span><input id="shapeName" placeholder="e.g. Voltage divider" maxlength="60"></label>
+      <label class="fld"><span>Category</span><select id="shapeCat"></select></label>
+      <label class="fld" id="newCatRow" hidden><span>New category</span><input id="newCat" placeholder="e.g. Logic gates" maxlength="40"></label>
+      <div class="row">
+        <span class="grow"></span>
+        <button type="button" onclick="this.closest('dialog').close()">Cancel</button>
+        <button type="submit" class="accent">Save shape</button>
       </div>
     </form>
   </dialog>

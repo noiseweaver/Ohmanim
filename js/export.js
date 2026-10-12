@@ -90,6 +90,10 @@ function primPy(p, o) {
 
 export function objectPy(o) {
   const d = REG[o.type];
+  if (o.type === 'group') {
+    const kids = (o.children || []).map(objectPy).join(',\n        ');
+    return `_obj(_place([${kids}], ${n(o.x)}, ${n(o.y)}, ${n(o.rot || 0)}, ${n(o.scale ?? 1)}))`;
+  }
   let parts;
   if (o.type === 'axes') {
     const f = exprToPy(o.fx);

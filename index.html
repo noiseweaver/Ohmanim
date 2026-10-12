@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Manim Visual</title>
+  <meta name="description" content="Build Manim slideshows for teaching electronics, entirely in the browser.">
+  <meta name="theme-color" content="#14171d">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><img src="icons/icon.svg" alt="" width="22" height="22"><span>Manim Visual</span></div>
+    <input id="title" class="title" aria-label="Lesson title" spellcheck="false">
+    <div class="group">
+      <button data-cmd="new" title="New lesson">New</button>
+      <button data-cmd="demo" title="Load the RC-circuit example">Example</button>
+      <button data-cmd="open" title="Open a .manimvis.json file">Open</button>
+      <button data-cmd="save" title="Download the lesson as JSON (Ctrl+S)">Save</button>
+      <input id="fileInput" type="file" accept=".json,application/json" hidden>
+    </div>
+    <div class="group">
+      <button data-cmd="undo" title="Undo (Ctrl+Z)">↶</button>
+      <button data-cmd="redo" title="Redo (Ctrl+Shift+Z)">↷</button>
+    </div>
+    <div class="group right">
+      <button data-cmd="play" title="Play this slide's animations">▶ Play slide</button>
+      <button data-cmd="present" class="primary" title="Present from this slide (F5)">Present</button>
+      <button data-cmd="export" class="accent" title="Export Manim Python">Export to Manim</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="slides panel">
+      <div class="panel-head"><span>Slides</span>
+        <span class="tools"><button data-cmd="addSlide" title="New blank slide">＋</button><button data-cmd="dupSlide" title="Duplicate slide: objects carry over and animate between slides">⧉</button></span>
+      </div>
+      <ol id="slideList"></ol>
+    </aside>
+
+    <aside class="palette panel">
+      <div class="panel-head"><span>Add</span></div>
+      <div id="palette"></div>
+    </aside>
+
+    <section class="stagewrap">
+      <div class="stagebar">
+        <div class="seg" role="radiogroup" aria-label="Tool">
+          <button data-tool="select" class="on" title="Select and move (V)">Select</button>
+          <button data-tool="wire" title="Draw wires: drag from point to point (W)">Wire</button>
+        </div>
+        <label class="chk"><input type="checkbox" id="snap" checked> Snap</label>
+        <label class="chk"><input type="checkbox" id="ghost" checked> Show previous slide</label>
+        <span id="hint" class="hint"></span>
+      </div>
+      <div class="stagebox">
+        <svg id="stage" viewBox="-7.1111 -4 14.2222 8" preserveAspectRatio="xMidYMid meet" aria-label="Slide canvas">
+          <rect id="bg" x="-7.1111" y="-4" width="14.2222" height="8"/>
+          <g id="grid" pointer-events="none"></g>
+          <g id="ghostLayer" opacity="0.18" pointer-events="none"></g>
+          <g id="objLayer"></g>
+          <g id="playLayer" pointer-events="none"></g>
+          <g id="overlay"></g>
+        </svg>
+      </div>
+    </section>
+
+    <aside class="inspector panel">
+      <div class="panel-head"><span id="inspTitle">Slide</span></div>
+      <div id="inspector"></div>
+    </aside>
+  </main>
+
+  <div id="present" class="present" hidden>
+    <svg id="presentSvg" viewBox="-7.1111 -4 14.2222 8" preserveAspectRatio="xMidYMid meet">
+      <rect id="presentBg" x="-7.1111" y="-4" width="14.2222" height="8"/>
+      <g id="presentLayer"></g>
+    </svg>
+    <div class="present-ui">
+      <span id="presentPos"></span>
+      <button data-p="prev" title="Back (←)">←</button>
+      <button data-p="next" title="Next (→ / Space / click)">→</button>
+      <button data-p="notes" title="Speaker notes (N)">Notes</button>
+      <button data-p="exit" title="Exit (Esc)">✕</button>
+    </div>
+    <div id="presentNotes" class="present-notes" hidden></div>
+  </div>
+
+  <dialog id="exportDlg">
+    <form method="dialog" class="dlg">
+      <h2>Export to Manim</h2>
+      <div class="seg" role="radiogroup">
+        <button type="button" data-mode="slides" class="on">manim-slides (click-through)</button>
+        <button type="button" data-mode="scene">Plain Scene (video)</button>
+      </div>
+      <p id="exportHelp" class="help"></p>
+      <textarea id="code" spellcheck="false" readonly></textarea>
+      <div class="row">
+        <button type="button" id="copyCode">Copy</button>
+        <button type="button" id="dlCode" class="accent">Download lesson.py</button>
+        <span class="grow"></span>
+        <button value="close">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

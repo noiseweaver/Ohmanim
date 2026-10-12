@@ -6,18 +6,26 @@ It is a static web app (installable PWA) hosted on GitHub Pages. Everything runs
 
 ## How it works
 
-Manim can't run inside a browser: it needs Cairo, Pango, ffmpeg and (for math) LaTeX, none of which exist in WebAssembly/Pyodide today. So the app has two halves that share the same geometry:
+Everything runs in the browser, including Manim itself.
 
-1. **Editor, preview and presenter in the browser.** Objects are drawn as SVG in Manim's own coordinate system (a 14.2 × 8 frame, y up). Animations (Create, FadeIn, Write, Transform, Indicate, current flow and so on) are approximated in the browser so you can rehearse and even present straight from the app.
-2. **Export to Manim.** "Export to Manim" writes a self-contained Python script built from the same primitives, so the rendered video matches what you laid out. Choose:
-   - **manim-slides** (default): each step becomes a click, ready for `manim-slides present` or a self-contained HTML slideshow.
-   - **Plain Scene**: a single video, with a short pause where each click would be.
+1. **Editor and live preview.** Objects are drawn as SVG in Manim's own coordinate system (a 14.2 × 8 frame, y up). Animations are approximated instantly so you can arrange and rehearse.
+2. **Real Manim, in a Web Worker.** "Render video" runs unmodified [Manim Community Edition](https://www.manim.community/) under [Pyodide](https://pyodide.org/) (CPython compiled to WebAssembly). Manim's native dependencies are replaced by small pure-Python stand-ins in `py/manimweb/`:
+   - **Cairo** becomes a recorder: Manim's camera draws as usual and every path, bezier curve, colour and gradient is replayed on an `OffscreenCanvas` (Canvas 2D has the same drawing model).
+   - **Pango** (used by `Text`) becomes [fontTools](https://github.com/fonttools/fonttools) laying out glyphs from bundled DejaVu fonts, using Pango's metrics so sizes match a normal install.
+   - **LaTeX** (used by `MathTex` and `Tex`) becomes [MathJax](https://www.mathjax.org/): the scene runs once to collect every formula, MathJax typesets them on the page, and the scene runs again with SVG shaped like dvisvgm's output. `MathTex` parts, `get_part_by_tex` and colouring by part keep working.
+   - **PyAV/ffmpeg** becomes [WebCodecs](https://developer.mozilla.org/docs/Web/API/WebCodecs_API) plus [mp4-muxer](https://github.com/Vanilagy/mp4-muxer), producing an MP4 you can download.
+   - OpenGL, sound and boolean path operations are stubbed; scenes that need them won't render.
+3. **Presenting.** After a render, Present plays the Manim video and pauses at every `next_slide()`, like manim-slides. If the slides changed since the last render, it falls back to the live preview.
+4. **Code.** The Code button shows the generated script. You can edit it, or paste any Manim scene, and render that instead. The same file also renders on a computer with `manim` or `manim-slides`.
+
+The first render downloads Pyodide, NumPy, SciPy and Manim (about 60 MB); the browser caches them. Rendering needs WebCodecs (current Chrome, Edge, Safari or Firefox).
+
+To render on a computer instead:
 
 ```bash
 pip install "manim<0.22" manim-slides     # manim-slides does not support manim 0.22 yet
 manim-slides render lesson.py RCCircuit
 manim-slides RCCircuit                     # present
-manim-slides convert RCCircuit lesson.html # web slideshow
 ```
 
 ## Authoring model
@@ -37,9 +45,12 @@ Shortcuts: `V` select, `W` wire, `R` / `Shift+R` rotate, `Del` delete, `Ctrl+D` 
 | `js/render.js` | Primitives to SVG, morphing, and the slide timeline shared by preview and export |
 | `js/player.js` | In-browser animation player used by "Play slide" and the presenter |
 | `js/export.js` | Manim / manim-slides Python generator |
+| `js/manim/` | In-browser Manim: worker (Pyodide), canvas replay, MP4 encoding, MathJax bridge |
+| `py/manimweb/` | Pure-Python stand-ins for Cairo, Pango, LaTeX and Manim's other native dependencies |
+| `vendor/` | MathJax 3.2.2 and mp4-muxer 5.2.2 (with licences) |
 | `js/app.js` | Editor UI |
 | `sw.js`, `manifest.webmanifest` | Offline support and install |
 
-No build step: serve the folder (`python3 -m http.server`) and open it. Pushing to `main` deploys via `.github/workflows/pages.yml`.
+No build step: serve the folder (`python3 -m http.server`) and open it. Pyodide loads from jsDelivr. Pushing to `main` deploys via `.github/workflows/pages.yml`.
 
 Adding a component means adding one `def(...)` in `js/components.js` with its primitives; the palette, preview, morphing and export pick it up automatically.

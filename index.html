@@ -31,7 +31,8 @@
     <div class="group right">
       <button data-cmd="play" title="Play this slide's animations">▶ Play slide</button>
       <button data-cmd="present" class="primary" title="Present from this slide (F5)">Present</button>
-      <button data-cmd="export" class="accent" title="Export Manim Python">Export to Manim</button>
+      <button data-cmd="code" title="See and edit the Manim Python code">Code</button>
+      <button data-cmd="render" class="accent" title="Render with real Manim, in your browser">Render video</button>
     </div>
   </header>
 
@@ -88,21 +89,57 @@
       <button data-p="notes" title="Speaker notes (N)">Notes</button>
       <button data-p="exit" title="Exit (Esc)">✕</button>
     </div>
+    <video id="presentVideo" playsinline muted hidden></video>
     <div id="presentNotes" class="present-notes" hidden></div>
   </div>
 
   <dialog id="exportDlg">
     <form method="dialog" class="dlg">
-      <h2>Export to Manim</h2>
-      <div class="seg" role="radiogroup">
-        <button type="button" data-mode="slides" class="on">manim-slides (click-through)</button>
-        <button type="button" data-mode="scene">Plain Scene (video)</button>
+      <h2>Manim code</h2>
+      <div class="row wrap">
+        <div class="seg" role="radiogroup">
+          <button type="button" data-mode="slides" class="on">Slides (click-through)</button>
+          <button type="button" data-mode="scene">Plain Scene</button>
+        </div>
+        <span class="grow"></span>
+        <button type="button" id="resetCode" title="Throw away your edits and regenerate from the slides">Regenerate from slides</button>
       </div>
       <p id="exportHelp" class="help"></p>
-      <textarea id="code" spellcheck="false" readonly></textarea>
-      <div class="row">
+      <textarea id="code" spellcheck="false"></textarea>
+      <div class="row wrap">
         <button type="button" id="copyCode">Copy</button>
-        <button type="button" id="dlCode" class="accent">Download lesson.py</button>
+        <button type="button" id="dlCode">Download lesson.py</button>
+        <span class="grow"></span>
+        <button type="button" id="renderCode" class="accent">Render this code</button>
+        <button value="close">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="renderDlg">
+    <form method="dialog" class="dlg">
+      <h2>Render with Manim</h2>
+      <p class="help" id="renderIntro">Runs Manim Community Edition inside your browser (Python via WebAssembly). The first render downloads about 60&nbsp;MB, which your browser keeps for next time.</p>
+      <div class="row wrap">
+        <label class="chk">Quality
+          <select id="quality">
+            <option value="854x480x15">Draft · 480p, 15 fps</option>
+            <option value="1280x720x30" selected>HD · 720p, 30 fps</option>
+            <option value="1920x1080x30">Full HD · 1080p, 30 fps</option>
+          </select>
+        </label>
+        <span class="grow"></span>
+        <button type="button" id="startRender" class="accent">Render</button>
+      </div>
+      <div class="renderview">
+        <canvas id="renderPreview" width="1280" height="720"></canvas>
+        <video id="renderVideo" controls playsinline hidden></video>
+      </div>
+      <p id="renderStatus" class="help" role="status"></p>
+      <pre id="renderError" class="err" hidden></pre>
+      <div class="row wrap">
+        <button type="button" id="dlVideo" hidden>Download MP4</button>
+        <button type="button" id="presentVideoBtn" hidden class="primary">Present this render</button>
         <span class="grow"></span>
         <button value="close">Close</button>
       </div>

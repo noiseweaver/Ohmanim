@@ -3,6 +3,7 @@ import { worldPrims, primsSVG, objectSVG, bbox, timeline, FRAME_W, FRAME_H } fro
 import { Player, applyBeat, stateSVG } from './player.js';
 import { exportPython } from './export.js';
 import { demoProject } from './demo.js';
+import { renderCode, warmUp, onEngine } from './manim/engine.js';
 
 const $ = (s) => document.querySelector(s);
 const STORE = 'manimvis.project.v1';
@@ -373,7 +374,8 @@ const commands = {
     renderStage();
   },
   present() { presenter.open(cur); },
-  export() { openExport(); },
+  code() { openCode(); },
+  render() { openRender(); },
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 document.querySelectorAll('[data-cmd]').forEach((b) => b.addEventListener('click', () => commands[b.dataset.cmd]()));
@@ -399,25 +401,106 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-// ---- export dialog --------------------------------------------------------------
+// ---- code dialog -----------------------------------------------------------------
 let exportMode = 'slides';
-function openExport() {
-  const dlg = $('#exportDlg');
-  refreshExport();
-  dlg.showModal();
+const generatedCode = (mode = 'slides') => exportPython(project, { mode });
+// What gets rendered: hand-edited code if there is any, otherwise generated from the slides.
+const currentCode = () => project.customCode || generatedCode('slides');
+
+function openCode() {
+  $('#code').value = project.customCode || generatedCode(exportMode);
+  refreshCodeHelp();
+  $('#exportDlg').showModal();
 }
-function refreshExport() {
-  const code = exportPython(project, { mode: exportMode });
-  $('#code').value = code;
-  const cls = /class (\w+)\(/.exec(code)[1];
-  $('#exportHelp').innerHTML = exportMode === 'slides'
-    ? `Install once: <code>pip install "manim&lt;0.22" manim-slides</code>\nRender: <code>manim-slides render lesson.py ${cls}</code>, then present with <code>manim-slides ${cls}</code> or make a web slideshow with <code>manim-slides convert ${cls} lesson.html</code>.`
-    : `Install once: <code>pip install manim</code>\nRender a video: <code>manim -qh lesson.py ${cls}</code>`;
+function refreshCodeHelp() {
+  const code = $('#code').value;
+  const cls = /class (\w+)\(/.exec(code)?.[1] || 'Lesson';
+  const edited = project.customCode ? '<b>You have edited this code.</b> Rendering uses your version until you regenerate it from the slides.\n' : '';
+  $('#exportHelp').innerHTML = edited + (exportMode === 'slides'
+    ? `"Render this code" runs it right here. To render on a computer instead: <code>pip install "manim&lt;0.22" manim-slides</code>, then <code>manim-slides render lesson.py ${cls}</code>.`
+    : `"Render this code" runs it right here. To render on a computer instead: <code>pip install manim</code>, then <code>manim -qh lesson.py ${cls}</code>.`);
   document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === exportMode));
 }
-document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { exportMode = b.dataset.mode; refreshExport(); }));
+document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => {
+  exportMode = b.dataset.mode;
+  if (project.customCode) edit(() => (project.customCode = null));
+  $('#code').value = generatedCode(exportMode);
+  refreshCodeHelp();
+}));
+$('#code').addEventListener('input', () => { edit(() => (project.customCode = $('#code').value), 'code'); });
+$('#code').addEventListener('change', refreshCodeHelp);
+$('#resetCode').addEventListener('click', () => { edit(() => (project.customCode = null)); $('#code').value = generatedCode(exportMode); refreshCodeHelp(); toast('Regenerated from the slides'); });
 $('#copyCode').addEventListener('click', async () => { try { await navigator.clipboard.writeText($('#code').value); toast('Copied'); } catch { $('#code').select(); document.execCommand('copy'); toast('Copied'); } });
 $('#dlCode').addEventListener('click', () => download(new Blob([$('#code').value], { type: 'text/x-python' }), 'lesson.py'));
+$('#renderCode').addEventListener('click', () => {
+  const code = $('#code').value;
+  if (code !== generatedCode(exportMode)) edit(() => (project.customCode = code));
+  $('#exportDlg').close();
+  openRender(code, true);
+});
+
+// ---- render dialog (real Manim in the browser) ----------------------------------
+let lastRender = null;     // { code, url, blob, markers, duration }
+let renderCodeText = '';
+let rendering = false;
+const previewCtx = $('#renderPreview').getContext('2d');
+
+function openRender(code = currentCode(), autostart = false) {
+  renderCodeText = code;
+  const have = lastRender && lastRender.code === code;
+  $('#renderError').hidden = true;
+  showRenderResult(have);
+  if (!have && !rendering) {
+    previewCtx.fillStyle = project.bg || '#000'; previewCtx.fillRect(0, 0, 1280, 720);
+    $('#renderStatus').textContent = 'Ready to render.';
+  }
+  $('#renderDlg').showModal();
+  warmUp();
+  if (autostart && !have) startRender();
+}
+function showRenderResult(on) {
+  $('#renderVideo').hidden = !on;
+  $('#renderPreview').hidden = on;
+  $('#dlVideo').hidden = !on;
+  $('#presentVideoBtn').hidden = !on;
+  if (on) {
+    if ($('#renderVideo').src !== lastRender.url) $('#renderVideo').src = lastRender.url;
+    $('#renderStatus').textContent = `Rendered ${lastRender.duration.toFixed(1)} s of video with ${lastRender.markers.length} click${lastRender.markers.length === 1 ? '' : 's'}.`;
+  }
+}
+async function startRender() {
+  if (rendering) return;
+  rendering = true;
+  $('#startRender').disabled = true;
+  $('#renderError').hidden = true;
+  showRenderResult(false);
+  const [width, height, fps] = $('#quality').value.split('x').map(Number);
+  const t0 = performance.now();
+  try {
+    const res = await renderCode(renderCodeText, { width, height, fps }, (m) => {
+      if (m.type === 'status') $('#renderStatus').textContent = m.text;
+      if (m.type === 'preview') {
+        previewCtx.drawImage(m.bitmap, 0, 0, 1280, 720); m.bitmap.close();
+        $('#renderStatus').textContent = `Rendering with Manim… ${m.time.toFixed(1)} s of video`;
+      }
+    });
+    if (lastRender) URL.revokeObjectURL(lastRender.url);
+    lastRender = { ...res, code: renderCodeText };
+    showRenderResult(true);
+    $('#renderStatus').textContent += ` Took ${((performance.now() - t0) / 1000).toFixed(0)} s.`;
+  } catch (err) {
+    $('#renderStatus').textContent = 'Manim stopped with an error:';
+    $('#renderError').textContent = err.message;
+    $('#renderError').hidden = false;
+  } finally {
+    rendering = false;
+    $('#startRender').disabled = false;
+  }
+}
+$('#startRender').addEventListener('click', startRender);
+$('#dlVideo').addEventListener('click', () => download(lastRender.blob, slug(project.title) + '.mp4'));
+$('#presentVideoBtn').addEventListener('click', () => { $('#renderDlg').close(); presenter.open(0, true); });
+onEngine((m) => { if (m.type === 'status' && !rendering && $('#renderDlg').open) $('#renderStatus').textContent = m.text; if (m.type === 'ready' && !rendering && $('#renderDlg').open && !(lastRender && lastRender.code === renderCodeText)) $('#renderStatus').textContent = 'Manim is loaded. Ready to render.'; });
 
 // ---- presenter -------------------------------------------------------------------
 function stateBefore(beat) {
@@ -426,28 +509,67 @@ function stateBefore(beat) {
   for (const b of beats) { if (b === beat || (b.slide === beat.slide && b.step === beat.step)) break; st = applyBeat(st, b); }
   return st;
 }
+const video = $('#presentVideo');
 const presenter = {
-  beats: [], i: -1, state: new Map(), player: new Player($('#presentLayer')), busy: false,
-  open(fromSlide) {
+  beats: [], i: -1, state: new Map(), player: new Player($('#presentLayer')), busy: false, mode: 'live', raf: 0,
+  // forceVideo: present the latest render even if the slides changed since.
+  open(fromSlide, forceVideo = false) {
     this.beats = timeline(project);
+    const useVideo = lastRender && (forceVideo || lastRender.code === currentCode());
+    this.mode = useVideo ? 'video' : 'live';
+    $('#present').hidden = false;
+    document.documentElement.requestFullscreen?.().catch(() => {});
+    $('#presentSvg').style.display = useVideo ? 'none' : '';
+    video.hidden = !useVideo;
+    if (useVideo) {
+      this.markers = lastRender.markers;
+      // Generated code pauses once per beat, so slide N starts at that beat's index.
+      const sameShape = !project.customCode && this.markers.length === this.beats.length;
+      const start = sameShape ? Math.max(0, this.beats.findIndex((b) => b.slide === fromSlide)) : 0;
+      this.i = start - 1;
+      if (video.src !== lastRender.url) video.src = lastRender.url;
+      video.pause();
+      video.currentTime = start > 0 ? this.markers[start - 1].time : 0;
+      this.next();
+      return;
+    }
     const start = this.beats.findIndex((b) => b.slide === fromSlide);
     this.state = new Map();
     for (let k = 0; k < start; k++) this.state = applyBeat(this.state, this.beats[k]);
     this.i = start - 1;
     $('#presentBg').setAttribute('fill', project.bg || '#000');
-    $('#present').hidden = false;
     $('#presentLayer').innerHTML = stateSVG(this.state);
-    document.documentElement.requestFullscreen?.().catch(() => {});
     this.next();
   },
   close() {
     this.player.stop();
+    cancelAnimationFrame(this.raf); video.pause();
     $('#present').hidden = true;
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-    const b = this.beats[Math.max(0, this.i)];
+    const b = this.mode === 'live' ? this.beats[Math.max(0, this.i)] : null;
     if (b) { cur = b.slide; sel = null; renderAll(); }
   },
+  count() { return this.mode === 'video' ? this.markers.length : this.beats.length; },
+  playTo(target) {
+    cancelAnimationFrame(this.raf);
+    this.busy = true;
+    video.play().catch(() => {});
+    const tick = () => {
+      if (video.currentTime >= target - 0.02 || video.ended) {
+        video.pause(); video.currentTime = Math.max(0, target - 0.001); this.busy = false; return;
+      }
+      this.raf = requestAnimationFrame(tick);
+    };
+    this.raf = requestAnimationFrame(tick);
+  },
   async next() {
+    if (this.mode === 'video') {
+      if (this.busy) { cancelAnimationFrame(this.raf); video.pause(); video.currentTime = this.markers[this.i].time - 0.001; this.busy = false; return; }
+      if (this.i >= this.count() - 1) return;
+      this.i++; this.pos();
+      this.playTo(this.markers[this.i].time);
+      return;
+    }
     if (this.busy) { this.player.stop(); return; } // click while animating: skip to end
     if (this.i >= this.beats.length - 1) return;
     this.i++;
@@ -461,6 +583,11 @@ const presenter = {
   },
   prev() {
     if (this.i <= 0) return;
+    if (this.mode === 'video') {
+      cancelAnimationFrame(this.raf); video.pause(); this.busy = false;
+      this.i--; video.currentTime = this.markers[this.i].time - 0.001; this.pos();
+      return;
+    }
     this.player.stop(); this.busy = false;
     this.i--;
     this.state = new Map();
@@ -469,9 +596,15 @@ const presenter = {
     this.pos();
   },
   pos() {
+    const tag = this.mode === 'video' ? 'Manim render · ' : '';
+    if (this.mode === 'video' && (project.customCode || this.markers.length !== this.beats.length)) {
+      $('#presentPos').textContent = `${tag}step ${this.i + 1}/${this.count()}`;
+      $('#presentNotes').textContent = (this.i > 0 && this.markers[this.i - 1].notes) || '(no notes)';
+      return;
+    }
     const b = this.beats[this.i];
     const steps = this.beats.filter((x) => x.slide === b.slide);
-    $('#presentPos').textContent = `Slide ${b.slide + 1}/${project.slides.length}` + (steps.length > 1 ? ` · step ${steps.indexOf(b) + 1}/${steps.length}` : '');
+    $('#presentPos').textContent = `${tag}Slide ${b.slide + 1}/${project.slides.length}` + (steps.length > 1 ? ` · step ${steps.indexOf(b) + 1}/${steps.length}` : '');
     $('#presentNotes').textContent = project.slides[b.slide].notes || '(no notes)';
   },
 };
@@ -492,7 +625,7 @@ document.addEventListener('keydown', (e) => {
     else if (e.key.toLowerCase() === 'n') $('#presentNotes').hidden = !$('#presentNotes').hidden;
     return;
   }
-  if ($('#exportDlg').open) return;
+  if ($('#exportDlg').open || $('#renderDlg').open) return;
   const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName);
   const mod = e.ctrlKey || e.metaKey;
   if (mod && e.key.toLowerCase() === 'z') { if (typing) return; e.preventDefault(); e.shiftKey ? redo() : undo(); return; }

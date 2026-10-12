@@ -1,9 +1,15 @@
 import { REG, CATEGORIES, ENTER_ANIMS, EMPH_ANIMS, makeObject, uid, checkExpr } from './components.js';
-import { worldPrims, primsSVG, objectSVG, bbox, timeline, fonts, DEFAULT_FONT, FRAME_W, FRAME_H } from './render.js';
+import { worldPrims, primsSVG, objectSVG, bbox, timeline, emphList, fonts, DEFAULT_FONT, FRAME_W, FRAME_H } from './render.js';
 import { Player, applyBeat, stateSVG } from './player.js';
 import { exportPython } from './export.js';
 import { demoProject } from './demo.js';
 import { renderCode, warmUp, onEngine } from './manim/engine.js';
+import { icon, installIcons } from './icons.js';
+import { THEMES, STYLES, loadLook, saveLook, applyLook, themeSwatch } from './themes.js';
+
+installIcons();
+let look = loadLook();
+applyLook(look);
 
 const $ = (s) => document.querySelector(s);
 const STORE = 'manimvis.project.v1';
@@ -361,19 +367,18 @@ $('#shapeForm').addEventListener('submit', (e) => {
   }
   lastShapeCat = cat;
   const g = objs.length === 1 && objs[0].type === 'group' ? clone(objs[0]) : makeGroup(objs);
-  Object.assign(g, { x: 0, y: 0, name, enter: 'Create', step: 1, emph: 'None' });
+  Object.assign(g, { x: 0, y: 0, name, enter: 'Create', step: 1, emphs: [] }); delete g.emph; delete g.mstep;
   library.shapes.push({ id: uid(), name, category: cat, obj: g });
   saveLibrary();
-  openCats.add(cat); saveOpenCats();
   $('#shapeDlg').close();
   renderPalette();
   toast(`Saved "${name}" to ${cat}`);
 });
 
-// ---- palette -----------------------------------------------------------------
-const OPEN_KEY = 'manimvis.palette.open';
-let openCats = new Set((() => { try { return JSON.parse(localStorage.getItem(OPEN_KEY)); } catch { return null; } })() || ['Electronics', 'Shapes']);
-function saveOpenCats() { try { localStorage.setItem(OPEN_KEY, JSON.stringify([...openCats])); } catch {} }
+// ---- shape menus (dock under the canvas) ----------------------------------------------
+// Each category is a button in the dock that opens its shapes in a menu above it.
+const CAT_ICONS = { Electronics: 'zap', Shapes: 'shapes', Text: 'type', Graphs: 'chart-spline' };
+let openCat = null;
 
 function iconFor(o) {
   const prims = worldPrims(o);
@@ -382,20 +387,29 @@ function iconFor(o) {
   return `<svg viewBox="${fx(b.cx - w / 2)} ${fx(-b.cy - h / 2)} ${fx(w)} ${fx(h)}">${primsSVG(prims)}</svg>`;
 }
 function iconSVG(type) {
-  const o = makeObject(type, { label: '', color: '#cfd5e2', fill: '#cfd5e2', sw: 6 });
+  const o = makeObject(type, { label: '', color: 'currentColor', fill: 'currentColor', sw: 6 });
   if (type === 'text') o.text = 'Aa';
   if (type === 'math') o.text = 'x^2';
   return iconFor(o);
 }
 function shapeIcon(obj) { const o = clone(obj); o.x = 0; o.y = 0; return iconFor(o); }
 
+function renderCatBar() {
+  $('#catBar').innerHTML = allCategories().map((c) => `<button data-cat="${escapeHTML(c)}" class="${openCat === c ? 'open' : ''}" aria-expanded="${openCat === c}" aria-haspopup="true">` +
+    `${icon(CAT_ICONS[c] || 'folder')}<span>${escapeHTML(c)}</span>${icon('chevron-up', 'chev')}</button>`).join('');
+}
+
 function renderPalette() {
-  const q = ($('#paletteSearch')?.value || '').trim().toLowerCase();
+  renderCatBar();
+  if (!openCat) return;
+  const q = ($('#paletteSearch').value || '').trim().toLowerCase();
   const match = (name) => !q || name.toLowerCase().includes(q);
-  const item = (d) => `<button draggable="true" data-add="${d.type}" title="Add ${d.name} (or drag onto the slide)">${iconSVG(d.type)}<span>${d.name}</span></button>`;
+  const item = (d) => d.type === 'wire'
+    ? `<button class="tool" data-add="wire" title="Wire tool: drag between terminals to connect parts (W)">${icon('cable')}<span>Wire tool</span></button>`
+    : `<button draggable="true" data-add="${d.type}" title="Add ${d.name} (or drag onto the slide)">${iconSVG(d.type)}<span>${d.name}</span></button>`;
   const libItem = (s) => `<span class="libitem"><button draggable="true" data-lib="${s.id}" title="Add ${escapeHTML(s.name)} (or drag onto the slide)">${shapeIcon(s.obj)}<span>${escapeHTML(s.name)}</span></button>` +
-    `<button class="del" data-libdel="${s.id}" title="Remove from library" aria-label="Remove ${escapeHTML(s.name)}">✕</button></span>`;
-  const sections = allCategories().map((cat) => {
+    `<button class="del" data-libdel="${s.id}" title="Remove from library" aria-label="Remove ${escapeHTML(s.name)}">${icon('trash-2')}</button></span>`;
+  const section = (cat, withTitle) => {
     const def = CATEGORIES.find((c) => c.name === cat);
     let body = '';
     for (const sub of def?.subs || []) {
@@ -403,44 +417,73 @@ function renderPalette() {
       if (items.length) body += `<h4>${sub}</h4><div class="items">${items.map(item).join('')}</div>`;
     }
     const mine = library.shapes.filter((s) => s.category === cat && match(s.name));
-    if (mine.length) body += `<h4>Saved</h4><div class="items">${mine.map(libItem).join('')}</div>`;
-    if (!body && q) return '';
-    if (!body) body = `<p class="empty">Select objects on a slide and choose <b>Save as shape</b> to add them here.</p>`;
-    const count = (def ? Object.values(REG).filter((d) => d.cat === cat).length : 0) + library.shapes.filter((s) => s.category === cat).length;
-    return `<details data-cat="${escapeHTML(cat)}"${openCats.has(cat) || q ? ' open' : ''}><summary><span>${escapeHTML(cat)}</span><span class="count">${count}</span></summary>${body}</details>`;
-  }).join('');
-  $('#palette').innerHTML = sections || '<p class="empty">Nothing matches.</p>';
+    if (mine.length) body += `<h4>${icon('bookmark-plus')}Saved</h4><div class="items">${mine.map(libItem).join('')}</div>`;
+    if (!body) return q ? '' : `<p class="empty">Nothing here yet. Select objects on a slide and choose <b>Save as shape</b> to add them to ${escapeHTML(cat)}.</p>`;
+    return (withTitle ? `<h5>${escapeHTML(cat)}</h5>` : '') + body;
+  };
+  const html = q ? allCategories().map((c) => section(c, true)).join('') : section(openCat, false);
+  $('#palette').innerHTML = html || '<p class="empty">Nothing matches.</p>';
 }
-$('#palette').addEventListener('toggle', (e) => {
-  const d = e.target.closest('details[data-cat]');
-  if (!d || ($('#paletteSearch').value || '').trim()) return;
-  d.open ? openCats.add(d.dataset.cat) : openCats.delete(d.dataset.cat);
-  saveOpenCats();
-}, true);
+
+function placeShelf() {
+  const btn = openCat && $(`#catBar [data-cat="${CSS.escape(openCat)}"]`);
+  const shelf = $('#shelf');
+  if (!btn) return;
+  const r = btn.getBoundingClientRect(), dock = $('.dock').getBoundingClientRect();
+  const w = shelf.offsetWidth;
+  shelf.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
+  // open upward when there is room above the dock, otherwise below it
+  const above = dock.top - 14, below = window.innerHeight - dock.bottom - 14;
+  if (above >= Math.min(320, below)) { shelf.style.bottom = (window.innerHeight - dock.top + 6) + 'px'; shelf.style.top = ''; shelf.style.maxHeight = Math.min(560, above) + 'px'; }
+  else { shelf.style.top = (dock.bottom + 6) + 'px'; shelf.style.bottom = ''; shelf.style.maxHeight = Math.min(560, below) + 'px'; }
+}
+function openShelf(cat) {
+  openCat = cat;
+  $('#shelf').hidden = !cat;
+  $('#shelf').classList.remove('dragging');
+  renderPalette();
+  if (cat) placeShelf();
+}
+$('#catBar').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-cat]');
+  if (b) openShelf(openCat === b.dataset.cat ? null : b.dataset.cat);
+});
+$('#searchBtn').addEventListener('click', () => { openShelf(openCat || allCategories()[0]); $('#paletteSearch').focus(); });
+$('#shelfClose').addEventListener('click', () => openShelf(null));
 $('#paletteSearch').addEventListener('input', renderPalette);
+window.addEventListener('resize', () => openCat && placeShelf());
+window.addEventListener('scroll', () => openCat && placeShelf(), { passive: true });
+document.addEventListener('pointerdown', (e) => {
+  if (openCat && !e.target.closest('#shelf, #catBar, #searchBtn')) openShelf(null);
+});
 $('#palette').addEventListener('click', (e) => {
   const del = e.target.closest('[data-libdel]');
   if (del) {
     // two-step delete: first click arms, second click removes
-    if (!del.classList.contains('armed')) { del.classList.add('armed'); del.textContent = 'Delete?'; setTimeout(() => { del.classList.remove('armed'); del.textContent = '✕'; }, 2500); return; }
+    if (!del.classList.contains('armed')) { del.classList.add('armed'); del.innerHTML = icon('trash-2') + 'Delete?'; setTimeout(() => { del.classList.remove('armed'); del.innerHTML = icon('trash-2'); }, 2500); return; }
     library.shapes = library.shapes.filter((s) => s.id !== del.dataset.libdel);
     saveLibrary(); renderPalette();
     return;
   }
   const lib = e.target.closest('[data-lib]');
-  if (lib) return addLibraryShape(lib.dataset.lib);
+  if (lib) { openShelf(null); return addLibraryShape(lib.dataset.lib); }
   const b = e.target.closest('[data-add]');
   if (!b) return;
-  if (b.dataset.add === 'wire') { setTool('wire'); toast('Drag on the slide to draw a wire'); return; }
-  if (b.dataset.add === 'poly') { setTool('draw'); toast('Click to place points. Click the first point to close, or double-click to finish.'); return; }
+  openShelf(null);
+  if (b.dataset.add === 'wire') { setTool('wire'); return; }
+  if (b.dataset.add === 'poly') { setTool('draw'); return; }
   addObject(b.dataset.add);
 });
 $('#palette').addEventListener('dragstart', (e) => {
   const lib = e.target.closest('[data-lib]');
-  if (lib) return e.dataTransfer.setData('text/x-manimvis', 'lib:' + lib.dataset.lib);
   const b = e.target.closest('[data-add]');
-  if (b) e.dataTransfer.setData('text/x-manimvis', b.dataset.add);
+  if (lib) e.dataTransfer.setData('text/x-manimvis', 'lib:' + lib.dataset.lib);
+  else if (b) e.dataTransfer.setData('text/x-manimvis', b.dataset.add);
+  else return;
+  // get the menu out of the way of the drop without removing the drag source
+  requestAnimationFrame(() => $('#shelf').classList.add('dragging'));
 });
+$('#palette').addEventListener('dragend', () => openShelf(null));
 $('#libExport').addEventListener('click', () => {
   download(new Blob([JSON.stringify({ kind: 'manimvis-library', version: 1, ...library }, null, 1)], { type: 'application/json' }), 'manim-visual-shapes.json');
 });
@@ -471,7 +514,7 @@ function thumbSVG(s) {
 function renderSlides() {
   $('#slideList').innerHTML = project.slides.map((s, i) => `<li data-i="${i}"${i === cur ? ' class="on"' : ''}>
     <span class="thumb">${thumbSVG(s)}</span><div class="name">${escapeHTML(s.name || 'Untitled')}</div>
-    <span class="ops"><button data-op="up" title="Move up">↑</button><button data-op="down" title="Move down">↓</button><button data-op="del" title="Delete slide">✕</button></span></li>`).join('');
+    <span class="ops"><button data-op="up" title="Move up" aria-label="Move up">${icon('arrow-up')}</button><button data-op="down" title="Move down" aria-label="Move down">${icon('arrow-down')}</button><button data-op="del" title="Delete slide" aria-label="Delete slide">${icon('trash-2')}</button></span></li>`).join('');
 }
 const escapeHTML = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 $('#slideList').addEventListener('click', (e) => {
@@ -493,7 +536,7 @@ function addSlide(dup) {
   edit(() => {
     const s = dup ? { ...clone(slide()), id: uid(), name: (slide().name || 'Slide') + ' (next)', notes: '' }
       : { id: uid(), name: 'Slide ' + (project.slides.length + 1), notes: '', objects: [] };
-    if (dup) s.objects.forEach((o) => { o.emph = 'None'; o.step = 1; });
+    if (dup) { s.objects.forEach((o) => { delete o.emph; o.emphs = []; o.step = 1; delete o.mstep; }); delete s.outSteps; }
     project.slides.splice(cur + 1, 0, s);
     cur++; setSelection([]);
   });
@@ -521,8 +564,8 @@ function renderInspector() {
     $('#inspTitle').textContent = `${many.length} selected`;
     const same = many.every((q) => q.color === many[0].color);
     box.innerHTML = `<div class="sec" data-scope="multi">${field('Colour', 'color', 'color', same ? many[0].color : '#ffffff')}</div>
-      <div class="btnrow"><button data-act="group" class="accent">Group</button><button data-act="saveShape">Save as shape</button></div>
-      <div class="btnrow"><button data-act="rotate">Rotate 90°</button><button data-act="dup">Duplicate</button><button data-act="del">Delete</button></div>
+      <div class="btnrow"><button data-act="group" class="accent">${icon('group')}Group</button><button data-act="saveShape">${icon('bookmark-plus')}Save as shape</button></div>
+      <div class="btnrow"><button data-act="rotate">${icon('rotate-cw')}Rotate 90°</button><button data-act="dup">${icon('copy')}Duplicate</button><button data-act="del">${icon('trash-2')}Delete</button></div>
       <div class="help">Shift-click or drag a box to change the selection. <kbd>Ctrl G</kbd> groups.</div>`;
     return;
   }
@@ -536,8 +579,8 @@ function renderInspector() {
       <h4>Lesson</h4><div class="sec" data-scope="project">${field('Background', 'bg', 'color', project.bg || '#000000')}${field('Font', 'font', 'font', project.font || DEFAULT_FONT, { inherit: null })}</div>
       <div class="note">
         <b>How slides animate</b><br>
-        Objects appear with their <i>Enter</i> animation, grouped by <i>Step</i>; each step is one click.<br><br>
-        Use <b>⧉ Duplicate slide</b> to continue a scene: anything you move, recolour or change (like closing a switch) morphs smoothly into place, and anything you delete fades out.
+        The <i>timeline</i> under the canvas shows every animation on this slide: one track per object and one column per click. Drag a block to another click, click it to change the animation, or use <b>+</b> to add an emphasis.<br><br>
+        <b>Duplicate slide</b> (${icon('copy')}) continues a scene: anything you move, recolour or change (like closing a switch) morphs smoothly into place, and anything you delete fades out.
       </div>
       <div class="help"><kbd>W</kbd> wire · <kbd>P</kbd> draw · <kbd>V</kbd> select · <kbd>R</kbd> rotate · <kbd>Del</kbd> delete · <kbd>Ctrl D</kbd> duplicate · <kbd>Ctrl G</kbd> group · <kbd>Ctrl A</kbd> select all · arrows nudge</div>`;
     return;
@@ -558,10 +601,13 @@ function renderInspector() {
   else h += '<div class="pair">' + field('Rotate°', 'rot', 'number', o.rot, { step: 15 }) + field('Scale', 'scale', 'number', o.scale, { step: 0.1, min: 0.1 }) + '</div>';
   h += '<h4>Animation</h4>';
   if (!isCarried) h += field('Enter', 'enter', 'select', o.enter, { options: ENTER_ANIMS });
-  h += field('Step', 'step', 'number', o.step, { step: 1, min: 1 });
-  h += field('Emphasis', 'emph', 'select', o.emph, { options: EMPH_ANIMS.map((a) => [a, a === 'FlowCurrent' ? 'Current flow' : a]) });
-  h += '</div><div class="btnrow"><button data-act="rotate">Rotate 90°</button><button data-act="dup">Duplicate</button><button data-act="front">To front</button><button data-act="del">Delete</button></div>';
-  h += `<div class="btnrow"><button data-act="saveShape">Save as shape</button>${o.type === 'group' ? '<button data-act="ungroup">Ungroup</button>' : ''}</div>`;
+  if (!isCarried) h += field('Enter on click', 'step', 'number', o.step, { step: 1, min: 1 });
+  const em = emphList(o);
+  h += field('Emphasis', 'emph', 'select', em[0]?.anim || 'None', { options: EMPH_ANIMS.map((a) => [a, emphName(a)]) });
+  if (em.length) h += field('Emphasis on click', 'emphStep', 'number', em[0].step || 1, { step: 1, min: 1 });
+  if (em.length > 1) h += `<div class="help">${em.length - 1} more emphasis animation${em.length > 2 ? 's' : ''} on this object. Edit them in the timeline.</div>`;
+  h += `</div><div class="btnrow"><button data-act="rotate">${icon('rotate-cw')}Rotate 90°</button><button data-act="dup">${icon('copy')}Duplicate</button><button data-act="front">${icon('bring-to-front')}To front</button><button data-act="del">${icon('trash-2')}Delete</button></div>`;
+  h += `<div class="btnrow"><button data-act="saveShape">${icon('bookmark-plus')}Save as shape</button>${o.type === 'group' ? `<button data-act="ungroup">${icon('ungroup')}Ungroup</button>` : ''}</div>`;
   if (o.type === 'group') h = h.replace('<div class="sec" data-scope="obj">', `<div class="sec" data-scope="obj">${field('Name', 'name', 'text', o.name || '')}${field('Recolour all', 'recolor', 'color', o.color)}`);
   if (o.type === 'axes' && !checkExpr(o.fx)) h += `<div class="note">The function uses something unsupported. Use x, numbers, + − * / ^, pi, e and sin cos tan exp log sqrt abs.</div>`;
   if (o.type === 'math') h += `<div class="help">Exported as MathTex, which needs LaTeX installed where you render.</div>`;
@@ -585,9 +631,16 @@ $('#inspector').addEventListener('input', (e) => {
   const o = selected();
   if (!o) return;
   if (key === 'recolor') edit(() => recolor(o, v), o.id + key);
+  else if (key === 'emph' || key === 'emphStep') edit(() => {
+    const em = emphList(o).map((e) => ({ ...e }));
+    if (key === 'emph') { if (v === 'None') em.shift(); else if (em[0]) em[0].anim = v; else em.unshift({ anim: v, step: o.step || 1 }); }
+    else if (em[0]) em[0].step = Math.max(1, Math.round(v));
+    o.emphs = em; delete o.emph;
+  }, o.id + key);
   else edit(() => { o[key] = key === 'step' ? Math.max(1, Math.round(v)) : v; }, o.id + key);
   renderStage(); renderSlides();
   if (el.tagName === 'SELECT' || el.type === 'checkbox' || key === 'fx') renderInspector();
+  renderTimeline();
 });
 $('#inspector').addEventListener('click', (e) => {
   const act = e.target.closest('[data-act]')?.dataset.act;
@@ -649,15 +702,25 @@ function objAction(act) {
 // ---- commands ----------------------------------------------------------------
 function setTool(t) {
   tool = t;
-  document.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === t));
+  document.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === t || (t === 'wire' && b.dataset.tool === 'select')));
+  $('#wireChip').hidden = t !== 'wire';
   stage.classList.toggle('wire', t === 'wire');
   stage.classList.toggle('draw', t === 'draw');
   if (t !== 'draw' && drawing) { drawing = null; renderOverlay(); }
-  $('#hint').textContent = t === 'wire' ? 'Drag between terminals to draw a wire. Esc to stop.'
+  const hint = t === 'wire' ? 'Drag between terminals to draw a wire. Esc to stop.'
     : t === 'draw' ? 'Click to place points. Click the first point to close the shape, Enter or double-click to leave it open, Esc to cancel.' : '';
+  $('#hint').textContent = hint; $('#hint').hidden = !hint;
 }
 document.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('click', () => setTool(b.dataset.tool)));
-$('#ghost').addEventListener('change', renderStage);
+$('#wireChip').addEventListener('click', () => setTool('select'));
+for (const [btn, box, after] of [['#snapBtn', '#snap', () => {}], ['#ghostBtn', '#ghost', () => renderStage()]]) {
+  $(btn).addEventListener('click', () => {
+    const on = !$(box).checked;
+    $(box).checked = on;
+    $(btn).classList.toggle('on', on); $(btn).setAttribute('aria-pressed', on);
+    after();
+  });
+}
 
 const commands = {
   new() { edit(() => { project = { title: 'Untitled lesson', bg: '#0e1116', version: 1, slides: [{ id: uid(), name: 'Slide 1', notes: '', objects: [] }] }; cur = 0; setSelection([]); }); renderAll(); toast('Started a new lesson. Undo (Ctrl+Z) brings the old one back.'); },
@@ -681,6 +744,7 @@ const commands = {
   present() { presenter.open(cur); },
   code() { openCode(); },
   render() { openRender(); },
+  appearance() { renderLook(); $('#lookDlg').showModal(); },
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 document.querySelectorAll('[data-cmd]').forEach((b) => b.addEventListener('click', () => commands[b.dataset.cmd]()));
@@ -921,6 +985,236 @@ $('#present').addEventListener('click', (e) => {
   else if (!e.target.closest('.present-notes')) presenter.next();
 });
 
+// ---- timeline (per slide: a track per object, a column per click) ------------------------
+const emphName = (a) => (a === 'FlowCurrent' ? 'Current flow' : a);
+const objName = (o) => o.name || o.label || (o.type === 'text' || o.type === 'math' ? String(o.text || '').slice(0, 24) : '') || REG[o.type]?.name || o.type;
+
+// Every animation on this slide as a block: {kind, id, step, i (emphasis index), anim}.
+function slideBlocks() {
+  const s = slide(), prev = prevSlide()?.objects || [];
+  const prevById = new Map(prev.map((p) => [p.id, p]));
+  const beats = timeline(project).filter((b) => b.slide === cur);
+  const first = beats[0]?.step || 1;
+  const blocks = [];
+  const changed = new Set(beats.flatMap((b) => b.phases.flat()).filter((a) => a.kind === 'transform').map((a) => a.id));
+  for (const o of s.objects) {
+    if (!prevById.has(o.id)) blocks.push({ kind: 'enter', id: o.id, step: Math.max(1, Math.round(o.step || 1)), anim: o.enter || 'Create' });
+    else if (changed.has(o.id)) blocks.push({ kind: 'morph', id: o.id, step: o.mstep ? Math.round(o.mstep) : first, anim: 'Morph' });
+    emphList(o).forEach((e, i) => blocks.push({ kind: 'emph', id: o.id, i, step: Math.max(1, Math.round(e.step || 1)), anim: e.anim }));
+  }
+  const outSteps = s.outSteps || {};
+  for (const p of prev) if (!s.objects.some((o) => o.id === p.id)) blocks.push({ kind: 'out', id: p.id, step: outSteps[p.id] ? Math.round(outSteps[p.id]) : first, anim: 'Fade out' });
+  return blocks;
+}
+
+function blockLabel(b) {
+  if (b.kind === 'enter') return b.anim === 'None' ? 'Appear' : b.anim;
+  if (b.kind === 'emph') return emphName(b.anim);
+  return b.anim;
+}
+
+function renderTimeline() {
+  const box = $('#timeline');
+  const s = slide();
+  const prev = prevSlide()?.objects || [];
+  const leaving = prev.filter((p) => !s.objects.some((o) => o.id === p.id));
+  const blocks = slideBlocks();
+  $('#tlSub').textContent = `Slide ${cur + 1} · ${blocks.length ? new Set(blocks.map((b) => b.step)).size + ' click' + (new Set(blocks.map((b) => b.step)).size === 1 ? '' : 's') : 'nothing animates yet'}`;
+  if (!s.objects.length && !leaving.length) { box.innerHTML = '<div class="tl-empty">Add something to the slide and its animations show up here, one track per object.</div>'; return; }
+  const maxStep = Math.max(1, ...blocks.map((b) => b.step));
+  const cols = maxStep + 1;
+  let h = `<div class="tl-grid" style="grid-template-columns: 170px repeat(${cols}, minmax(128px, 1fr))">`;
+  h += `<div class="tl-corner">Object</div>`;
+  for (let k = 1; k <= cols; k++) {
+    h += k <= maxStep
+      ? `<div class="tl-step" data-step="${k}">Click ${k}<button data-playstep="${k}" title="Play click ${k}" aria-label="Play click ${k}">${icon('play')}</button></div>`
+      : `<div class="tl-step new" data-step="${k}">New click</div>`;
+  }
+  const row = (o, gone) => {
+    const selC = !gone && isSel(o.id) ? ' tl-row-sel' : '';
+    let r = `<div class="tl-name${selC}${gone ? ' gone' : ''}" data-row="${o.id}" title="${escapeHTML(objName(o))}">${iconFor({ ...o, x: 0, y: 0, label: '', color: 'currentColor', fill: 'currentColor' }).replace('<svg', '<svg class="thumbic"')}<span>${escapeHTML(objName(o))}${gone ? ' (leaves)' : ''}</span></div>`;
+    for (let k = 1; k <= cols; k++) {
+      const here = blocks.filter((b) => b.id === o.id && b.step === k);
+      r += `<div class="tl-cell${selC}" data-row="${o.id}" data-step="${k}">` +
+        here.map((b) => `<span class="blk ${b.kind}" data-kind="${b.kind}" data-id="${b.id}" data-i="${b.i ?? ''}" title="${escapeHTML(blockLabel(b))}: drag to another click, click for options">${escapeHTML(blockLabel(b))}</span>`).join('') +
+        (gone ? '' : `<button class="add" data-addemph="${k}" title="Add an emphasis on click ${k}" aria-label="Add emphasis on click ${k}">${icon('plus')}</button>`) + '</div>';
+    }
+    return r;
+  };
+  for (const o of s.objects) h += row(o, false);
+  for (const p of leaving) h += row(p, true);
+  box.innerHTML = h + '</div>';
+}
+
+// Renumber clicks so they run 1, 2, 3… with no empty columns.
+function compactSteps() {
+  const s = slide();
+  const used = [...new Set(slideBlocks().map((b) => b.step))].sort((a, b) => a - b);
+  const map = new Map(used.map((k, i) => [k, i + 1]));
+  const m = (k) => map.get(Math.round(k)) ?? k;
+  for (const o of s.objects) {
+    if (o.step) o.step = m(o.step);
+    if (o.mstep) o.mstep = m(o.mstep);
+    if (Array.isArray(o.emphs)) o.emphs.forEach((e) => (e.step = m(e.step)));
+  }
+  if (s.outSteps) for (const id in s.outSteps) s.outSteps[id] = m(s.outSteps[id]);
+}
+
+function setBlockStep(b, k) {
+  const s = slide(), o = s.objects.find((q) => q.id === b.id);
+  edit(() => {
+    if (b.kind === 'enter') o.step = k;
+    else if (b.kind === 'morph') o.mstep = k;
+    else if (b.kind === 'emph') { o.emphs = emphList(o).map((e) => ({ ...e })); o.emphs[b.i].step = k; delete o.emph; }
+    else if (b.kind === 'out') (s.outSteps ||= {})[b.id] = k;
+    compactSteps();
+  });
+  renderTimeline(); renderInspector(); renderSlides();
+}
+
+const blockOf = (el) => slideBlocks().find((b) => b.kind === el.dataset.kind && b.id === el.dataset.id && String(b.i ?? '') === el.dataset.i);
+
+let tlDrag = null;
+$('#timeline').addEventListener('pointerdown', (e) => {
+  const el = e.target.closest('.blk');
+  if (!el || e.button !== 0) return;
+  e.preventDefault();
+  tlDrag = { el, x: e.clientX, y: e.clientY, moved: false, ghost: null, block: blockOf(el) };
+  el.setPointerCapture(e.pointerId);
+});
+$('#timeline').addEventListener('pointermove', (e) => {
+  if (!tlDrag) return;
+  const d = tlDrag;
+  if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 4) return;
+  if (!d.moved) {
+    d.moved = true;
+    d.ghost = d.el.cloneNode(true); d.ghost.classList.add('ghost'); document.body.appendChild(d.ghost);
+    d.el.classList.add('lifting');
+  }
+  d.ghost.style.left = e.clientX + 8 + 'px'; d.ghost.style.top = e.clientY - 10 + 'px';
+  // drop on any cell of the same track; the column picks the click
+  const under = document.elementsFromPoint(e.clientX, e.clientY).find((n) => n.classList?.contains('tl-cell') || n.classList?.contains('tl-step'));
+  document.querySelectorAll('.tl-cell.drop').forEach((c) => c.classList.remove('drop'));
+  const k = under ? +under.dataset.step : 0;
+  d.target = k || null;
+  if (k) $(`#timeline .tl-cell[data-row="${CSS.escape(d.block.id)}"][data-step="${k}"]`)?.classList.add('drop');
+});
+const endTlDrag = (e) => {
+  if (!tlDrag) return;
+  const d = tlDrag; tlDrag = null;
+  d.ghost?.remove(); d.el.classList.remove('lifting');
+  document.querySelectorAll('.tl-cell.drop').forEach((c) => c.classList.remove('drop'));
+  if (!d.block) return;
+  if (!d.moved) return openBlockMenu(d.block, d.el.getBoundingClientRect());
+  if (d.target && d.target !== d.block.step) setBlockStep(d.block, d.target);
+};
+$('#timeline').addEventListener('pointerup', endTlDrag);
+$('#timeline').addEventListener('pointercancel', () => { if (tlDrag) { tlDrag.ghost?.remove(); tlDrag.el.classList.remove('lifting'); tlDrag = null; } });
+
+$('#timeline').addEventListener('click', (e) => {
+  const play = e.target.closest('[data-playstep]');
+  if (play) return playStep(+play.dataset.playstep);
+  const add = e.target.closest('[data-addemph]');
+  if (add) {
+    const id = add.closest('[data-row]').dataset.row, k = +add.dataset.addemph;
+    const o = slide().objects.find((q) => q.id === id);
+    let idx = 0;
+    edit(() => { o.emphs = emphList(o).map((x) => ({ ...x })); delete o.emph; o.emphs.push({ anim: o.type === 'wire' ? 'FlowCurrent' : 'Indicate', step: k }); idx = o.emphs.length - 1; });
+    setSelection([id]);
+    renderAll();
+    const el = $(`#timeline .blk[data-kind="emph"][data-id="${CSS.escape(id)}"][data-i="${idx}"]`);
+    if (el) openBlockMenu(blockOf(el), el.getBoundingClientRect());
+    return;
+  }
+  const name = e.target.closest('.tl-name');
+  if (name && !name.classList.contains('gone')) {
+    const id = name.dataset.row;
+    if (e.shiftKey || e.metaKey || e.ctrlKey) { const ids = selectionIds(); setSelection(ids.includes(id) ? ids.filter((i) => i !== id) : [...ids, id]); }
+    else setSelection([id]);
+    renderStage(); renderInspector(); renderTimeline();
+  }
+});
+$('#tlToggle').addEventListener('click', () => {
+  const box = $('#timelineBox');
+  box.classList.toggle('collapsed');
+  $('#tlToggle').setAttribute('aria-expanded', !box.classList.contains('collapsed'));
+  try { localStorage.setItem('manimvis.timeline.collapsed', box.classList.contains('collapsed') ? '1' : ''); } catch {}
+});
+try { if (localStorage.getItem('manimvis.timeline.collapsed')) $('#timelineBox').classList.add('collapsed'); } catch {}
+// Drag the timeline's top edge to trade space with the canvas.
+{
+  const box = $('#timelineBox');
+  const setH = (h) => { box.style.height = h + 'px'; box.style.maxHeight = 'none'; };
+  try { const h = +localStorage.getItem('manimvis.timeline.height'); if (h) setH(h); } catch {}
+  $('#tlResize').addEventListener('pointerdown', (e) => {
+    const y0 = e.clientY, h0 = box.getBoundingClientRect().height;
+    e.target.setPointerCapture(e.pointerId);
+    const move = (ev) => setH(Math.max(90, Math.min(window.innerHeight * 0.7, h0 + y0 - ev.clientY)));
+    const up = () => {
+      e.target.removeEventListener('pointermove', move); e.target.removeEventListener('pointerup', up);
+      try { localStorage.setItem('manimvis.timeline.height', Math.round(box.getBoundingClientRect().height)); } catch {}
+    };
+    e.target.addEventListener('pointermove', move); e.target.addEventListener('pointerup', up);
+  });
+}
+
+// Options for one animation block: change its animation, move it, or remove it.
+function openBlockMenu(b, rect) {
+  const s = slide(), o = s.objects.find((q) => q.id === b.id);
+  let h = '';
+  if (b.kind === 'enter') h += '<div class="mh">Enter with</div>' + ENTER_ANIMS.map((a) => `<button data-set="${a}" class="${a === b.anim ? 'on' : ''}">${a === 'None' ? 'Appear (no animation)' : a}</button>`).join('');
+  if (b.kind === 'emph') h += '<div class="mh">Emphasis</div>' + EMPH_ANIMS.filter((a) => a !== 'None').map((a) => `<button data-set="${a}" class="${a === b.anim ? 'on' : ''}">${emphName(a)}</button>`).join('');
+  if (b.kind === 'morph') h += '<div class="mh">Morph from the previous slide</div>';
+  if (b.kind === 'out') h += '<div class="mh">Fades out (deleted on this slide)</div>';
+  h += '<hr><div class="mh">Plays on click ' + b.step + '</div>';
+  h += `<button data-move="-1"${b.step <= 1 ? ' disabled' : ''}>${icon('arrow-left')}Earlier click</button><button data-move="1">${icon('arrow-right')}Later click</button>`;
+  if ((b.kind === 'morph' && o?.mstep) || (b.kind === 'out' && s.outSteps?.[b.id])) h += `<button data-reset>${icon('rotate-ccw')}Back to slide start</button>`;
+  if (b.kind === 'emph') h += `<hr><button data-remove>${icon('trash-2')}Remove emphasis</button>`;
+  const m = $('#tlMenu');
+  m.innerHTML = h; m.hidden = false;
+  const top = rect.bottom + 4 + m.offsetHeight > window.innerHeight ? rect.top - m.offsetHeight - 4 : rect.bottom + 4;
+  m.style.left = Math.min(rect.left, window.innerWidth - m.offsetWidth - 8) + 'px';
+  m.style.top = Math.max(8, top) + 'px';
+  m.onclick = (e) => {
+    const t = e.target.closest('button');
+    if (!t) return;
+    m.hidden = true;
+    if (t.dataset.set) {
+      edit(() => {
+        if (b.kind === 'enter') o.enter = t.dataset.set;
+        else { o.emphs = emphList(o).map((x) => ({ ...x })); o.emphs[b.i].anim = t.dataset.set; delete o.emph; }
+      });
+    } else if (t.dataset.move) return setBlockStep(b, Math.max(1, b.step + +t.dataset.move));
+    else if ('reset' in t.dataset) edit(() => { if (b.kind === 'morph') delete o.mstep; else delete s.outSteps[b.id]; compactSteps(); });
+    else if ('remove' in t.dataset) edit(() => { o.emphs = emphList(o).filter((_, i) => i !== b.i); delete o.emph; compactSteps(); });
+    renderAll();
+  };
+}
+document.addEventListener('pointerdown', (e) => { if (!$('#tlMenu').hidden && !e.target.closest('#tlMenu')) $('#tlMenu').hidden = true; });
+
+async function playStep(k) {
+  const beat = timeline(project).find((b) => b.slide === cur && b.step === k);
+  if (!beat) return;
+  const state = stateBefore(beat);
+  $('#objLayer').style.opacity = 0; $('#ghostLayer').style.opacity = 0; $('#overlay').style.display = 'none';
+  await player.play(state, beat);
+  await sleep(500);
+  $('#objLayer').style.opacity = ''; $('#ghostLayer').style.opacity = ''; $('#overlay').style.display = '';
+  renderStage();
+}
+
+// ---- theme and style -----------------------------------------------------------------------
+function renderLook() {
+  $('#styleList').innerHTML = STYLES.map((st) => `<button type="button" data-style="${st.id}" class="${st.id === look.style ? 'on' : ''}"><b>${st.name}</b><span>${st.desc}</span></button>`).join('');
+  $('#themeList').innerHTML = THEMES.map((t) => `<button type="button" data-theme="${t.id}" class="${t.id === look.theme ? 'on' : ''}" title="${escapeHTML(t.desc)}">${themeSwatch(t)}<span class="tn">${escapeHTML(t.name)}</span></button>`).join('');
+  $('#followSystem').checked = !!look.follow;
+}
+function setLook(patch) { look = { ...look, ...patch }; saveLook(look); applyLook(look); renderLook(); }
+$('#styleList').addEventListener('click', (e) => { const b = e.target.closest('[data-style]'); if (b) setLook({ style: b.dataset.style }); });
+$('#themeList').addEventListener('click', (e) => { const b = e.target.closest('[data-theme]'); if (b) setLook({ theme: b.dataset.theme }); });
+$('#followSystem').addEventListener('change', (e) => setLook({ follow: e.target.checked }));
+window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', () => look.follow && applyLook(look));
+
 // ---- keyboard ------------------------------------------------------------------
 document.addEventListener('keydown', (e) => {
   if (!$('#present').hidden) {
@@ -930,7 +1224,8 @@ document.addEventListener('keydown', (e) => {
     else if (e.key.toLowerCase() === 'n') $('#presentNotes').hidden = !$('#presentNotes').hidden;
     return;
   }
-  if ($('#exportDlg').open || $('#renderDlg').open || $('#shapeDlg').open) return;
+  if ($('#exportDlg').open || $('#renderDlg').open || $('#shapeDlg').open || $('#lookDlg').open) return;
+  if (e.key === 'Escape' && (openCat || !$('#tlMenu').hidden)) { openShelf(null); $('#tlMenu').hidden = true; return; }
   const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName);
   const mod = e.ctrlKey || e.metaKey;
   if (mod && e.key.toLowerCase() === 'z') { if (typing) return; e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
@@ -962,7 +1257,7 @@ document.addEventListener('keydown', (e) => {
 function renderAll() {
   fonts.lesson = project.font || DEFAULT_FONT;
   $('#title').value = project.title || '';
-  renderSlides(); renderStage(); renderInspector();
+  renderSlides(); renderStage(); renderInspector(); renderTimeline();
 }
 drawGrid();
 renderPalette();

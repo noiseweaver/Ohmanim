@@ -199,33 +199,51 @@ export function morphPrims(A, B, t) {
 // ---- timeline ----------------------------------------------------------------
 // A beat is what one click plays. Beats contain sequential phases; each phase
 // is a list of animations that run together (one `self.play(...)` in Manim).
-const stateKey = (o) => { const { enter, step, emph, ...rest } = o; return JSON.stringify(rest); };
+const stateKey = (o) => { const { enter, step, emph, emphs, mstep, name, ...rest } = o; return JSON.stringify(rest); };
 
+// An object's emphasis animations, each at its own step. Older lessons stored one `emph`
+// that played at the object's own step.
+export function emphList(o) {
+  if (Array.isArray(o.emphs)) return o.emphs.filter((e) => e && e.anim && e.anim !== 'None');
+  return o.emph && o.emph !== 'None' ? [{ anim: o.emph, step: o.step || 1 }] : [];
+}
+const stepOf = (v) => Math.max(1, Math.round(v || 1));
+
+// Each slide plays as a list of beats (one per click). A beat runs its phases in order:
+// morphs and fade-outs from the previous slide, then entrances, then emphasis.
+// Morphs and fade-outs play on the slide's first beat unless given their own step
+// (`o.mstep` on a carried object, `slide.outSteps[id]` for one that left).
 export function timeline(project) {
   const beats = [];
   project.slides.forEach((slide, si) => {
     const prev = si > 0 ? project.slides[si - 1].objects : [];
     const prevById = new Map(prev.map((o) => [o.id, o]));
     const curIds = new Set(slide.objects.map((o) => o.id));
-    const trans = [];
+    const outSteps = slide.outSteps || {};
+    const steps = new Map();
+    const at = (k) => { if (!steps.has(k)) steps.set(k, { trans: [], enter: [], emph: [] }); return steps.get(k); };
+    const firstTrans = [];
     for (const o of slide.objects) {
       const p = prevById.get(o.id);
-      if (p && stateKey(p) !== stateKey(o)) trans.push({ kind: 'transform', id: o.id, from: p, to: o });
+      if (p && stateKey(p) !== stateKey(o)) {
+        const a = { kind: 'transform', id: o.id, from: p, to: o };
+        o.mstep ? at(stepOf(o.mstep)).trans.push(a) : firstTrans.push(a);
+      }
+      if (!p) at(stepOf(o.step)).enter.push({ kind: 'enter', id: o.id, obj: o, anim: o.enter || 'Create' });
+      for (const e of emphList(o)) at(stepOf(e.step)).emph.push({ kind: 'emph', id: o.id, obj: o, anim: e.anim });
     }
-    for (const p of prev) if (!curIds.has(p.id)) trans.push({ kind: 'fadeout', id: p.id, obj: p });
-    const steps = new Map();
-    const at = (k) => { if (!steps.has(k)) steps.set(k, { enter: [], emph: [] }); return steps.get(k); };
-    for (const o of slide.objects) {
-      const k = Math.max(1, Math.round(o.step || 1));
-      if (!prevById.has(o.id)) at(k).enter.push({ kind: 'enter', id: o.id, obj: o, anim: o.enter || 'Create' });
-      if (o.emph && o.emph !== 'None') at(k).emph.push({ kind: 'emph', id: o.id, obj: o, anim: o.emph });
+    for (const p of prev) {
+      if (curIds.has(p.id)) continue;
+      const a = { kind: 'fadeout', id: p.id, obj: p };
+      outSteps[p.id] ? at(stepOf(outSteps[p.id])).trans.push(a) : firstTrans.push(a);
     }
     const keys = [...steps.keys()].sort((a, b) => a - b);
     if (!keys.length) keys.push(1), at(1);
     keys.forEach((k, i) => {
       const s = steps.get(k);
+      const trans = i === 0 ? [...firstTrans, ...s.trans] : s.trans;
       const phases = [];
-      if (i === 0 && trans.length) phases.push(trans);
+      if (trans.length) phases.push(trans);
       if (s.enter.length) phases.push(s.enter);
       if (s.emph.length) phases.push(s.emph);
       beats.push({ slide: si, step: k, first: i === 0, phases });

@@ -18,52 +18,33 @@
     <div class="brand"><img src="icons/icon.svg" alt="" width="22" height="22"><span>Manim Visual</span></div>
     <input id="title" class="title" aria-label="Lesson title" spellcheck="false">
     <div class="group">
-      <button data-cmd="new" title="New lesson">New</button>
-      <button data-cmd="demo" title="Load the RC-circuit example">Example</button>
-      <button data-cmd="open" title="Open a .manimvis.json file">Open</button>
-      <button data-cmd="save" title="Download the lesson as JSON (Ctrl+S)">Save</button>
+      <button data-cmd="new" title="New lesson"><svg class="ic" aria-hidden="true"><use href="#i-file-plus"/></svg><span>New</span></button>
+      <button data-cmd="demo" title="Load the RC-circuit example"><svg class="ic" aria-hidden="true"><use href="#i-book-open"/></svg><span>Example</span></button>
+      <button data-cmd="open" title="Open a .manimvis.json file"><svg class="ic" aria-hidden="true"><use href="#i-folder-open"/></svg><span>Open</span></button>
+      <button data-cmd="save" title="Download the lesson as JSON (Ctrl+S)"><svg class="ic" aria-hidden="true"><use href="#i-save"/></svg><span>Save</span></button>
       <input id="fileInput" type="file" accept=".json,application/json" hidden>
     </div>
     <div class="group">
-      <button data-cmd="undo" title="Undo (Ctrl+Z)">↶</button>
-      <button data-cmd="redo" title="Redo (Ctrl+Shift+Z)">↷</button>
+      <button data-cmd="undo" class="icon" title="Undo (Ctrl+Z)" aria-label="Undo"><svg class="ic" aria-hidden="true"><use href="#i-undo-2"/></svg></button>
+      <button data-cmd="redo" class="icon" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg class="ic" aria-hidden="true"><use href="#i-redo-2"/></svg></button>
     </div>
     <div class="group right">
-      <button data-cmd="play" title="Play this slide's animations">▶ Play slide</button>
-      <button data-cmd="present" class="primary" title="Present from this slide (F5)">Present</button>
-      <button data-cmd="code" title="See and edit the Manim Python code">Code</button>
-      <button data-cmd="render" class="accent" title="Render with real Manim, in your browser">Render video</button>
+      <button data-cmd="appearance" class="icon" title="Theme and style" aria-label="Theme and style"><svg class="ic" aria-hidden="true"><use href="#i-palette"/></svg></button>
+      <button data-cmd="code" title="See and edit the Manim Python code"><svg class="ic" aria-hidden="true"><use href="#i-code"/></svg><span>Code</span></button>
+      <button data-cmd="render" title="Render with real Manim, in your browser"><svg class="ic" aria-hidden="true"><use href="#i-clapperboard"/></svg><span>Render video</span></button>
+      <button data-cmd="present" class="accent" title="Present from this slide (F5)"><svg class="ic" aria-hidden="true"><use href="#i-presentation"/></svg><span>Present</span></button>
     </div>
   </header>
 
   <main class="layout">
     <aside class="slides panel">
       <div class="panel-head"><span>Slides</span>
-        <span class="tools"><button data-cmd="addSlide" title="New blank slide">＋</button><button data-cmd="dupSlide" title="Duplicate slide: objects carry over and animate between slides">⧉</button></span>
+        <span class="tools"><button data-cmd="addSlide" class="icon" title="New blank slide" aria-label="New blank slide"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></button><button data-cmd="dupSlide" class="icon" title="Duplicate slide: objects carry over and animate between slides" aria-label="Duplicate slide"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg></button></span>
       </div>
       <ol id="slideList"></ol>
     </aside>
 
-    <aside class="palette panel">
-      <div class="panel-head"><span>Add</span>
-        <span class="libops"><button id="libImport" title="Import saved shapes from a file">Import</button><button id="libExport" title="Export your saved shapes to a file">Export</button></span>
-      </div>
-      <div class="search"><input id="paletteSearch" type="search" placeholder="Search shapes…" aria-label="Search shapes"></div>
-      <input type="file" id="libFile" accept=".json,application/json" hidden>
-      <div id="palette"></div>
-    </aside>
-
-    <section class="stagewrap">
-      <div class="stagebar">
-        <div class="seg" role="radiogroup" aria-label="Tool">
-          <button data-tool="select" class="on" title="Select and move (V)">Select</button>
-          <button data-tool="wire" title="Draw wires: drag from point to point (W)">Wire</button>
-          <button data-tool="draw" title="Draw your own shape: click points (P)">Draw</button>
-        </div>
-        <label class="chk"><input type="checkbox" id="snap" checked> Snap</label>
-        <label class="chk"><input type="checkbox" id="ghost" checked> Show previous slide</label>
-        <span id="hint" class="hint"></span>
-      </div>
+    <section class="center">
       <div class="stagebox">
         <svg id="stage" viewBox="-7.1111 -4 14.2222 8" preserveAspectRatio="xMidYMid meet" aria-label="Slide canvas">
           <rect id="bg" x="-7.1111" y="-4" width="14.2222" height="8"/>
@@ -73,7 +54,47 @@
           <g id="playLayer" pointer-events="none"></g>
           <g id="overlay"></g>
         </svg>
+        <span id="hint" class="hint" hidden></span>
       </div>
+
+      <div class="dock" role="toolbar" aria-label="Tools and shapes">
+        <div class="seg" role="radiogroup" aria-label="Tool">
+          <button data-tool="select" class="on" title="Select and move (V)"><svg class="ic" aria-hidden="true"><use href="#i-mouse-pointer-2"/></svg><span>Select</span></button>
+          <button data-tool="draw" title="Draw your own shape: click points (P)"><svg class="ic" aria-hidden="true"><use href="#i-pen-tool"/></svg><span>Draw</span></button>
+        </div>
+        <button id="wireChip" class="chip" hidden title="Wire tool is on: drag between terminals. Esc or click to stop."><svg class="ic" aria-hidden="true"><use href="#i-cable"/></svg><span>Wiring</span><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
+        <span class="sep"></span>
+        <div id="catBar" class="cats"></div>
+        <button id="searchBtn" class="icon" title="Search shapes" aria-label="Search shapes"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg></button>
+        <span class="grow"></span>
+        <button id="snapBtn" class="icon toggle on" title="Snap to grid" aria-label="Snap to grid" aria-pressed="true"><svg class="ic" aria-hidden="true"><use href="#i-magnet"/></svg></button>
+        <button id="ghostBtn" class="icon toggle on" title="Show what fades out from the previous slide" aria-label="Show previous slide" aria-pressed="true"><svg class="ic" aria-hidden="true"><use href="#i-layers"/></svg></button>
+        <button data-cmd="play" title="Play this slide's animations"><svg class="ic" aria-hidden="true"><use href="#i-play"/></svg><span>Play slide</span></button>
+        <input type="checkbox" id="snap" checked hidden><input type="checkbox" id="ghost" checked hidden>
+      </div>
+
+      <div id="shelf" class="shelf" hidden>
+        <div class="shelf-head">
+          <input id="paletteSearch" type="search" placeholder="Search shapes…" aria-label="Search shapes">
+          <button id="libImport" title="Import saved shapes from a file"><svg class="ic" aria-hidden="true"><use href="#i-upload"/></svg><span>Import</span></button>
+          <button id="libExport" title="Export your saved shapes to a file"><svg class="ic" aria-hidden="true"><use href="#i-download"/></svg><span>Export</span></button>
+          <button id="shelfClose" class="icon" title="Close" aria-label="Close"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
+        </div>
+        <div id="palette"></div>
+        <input type="file" id="libFile" accept=".json,application/json" hidden>
+      </div>
+
+      <section class="timeline" id="timelineBox">
+        <div class="tl-resize" id="tlResize" title="Drag to resize the timeline" aria-hidden="true"></div>
+        <div class="tl-head">
+          <button id="tlToggle" class="icon" title="Show or hide the timeline" aria-label="Show or hide the timeline" aria-expanded="true"><svg class="ic" aria-hidden="true"><use href="#i-chevron-down"/></svg></button>
+          <span class="tl-title">Timeline</span>
+          <span class="tl-sub" id="tlSub"></span>
+          <span class="grow"></span>
+          <span class="tl-legend"><i class="k-enter"></i>Enter <i class="k-morph"></i>Morph <i class="k-emph"></i>Emphasis <i class="k-out"></i>Fade out</span>
+        </div>
+        <div id="timeline" class="tl-body"></div>
+      </section>
     </section>
 
     <aside class="inspector panel">
@@ -89,10 +110,10 @@
     </svg>
     <div class="present-ui">
       <span id="presentPos"></span>
-      <button data-p="prev" title="Back (←)">←</button>
-      <button data-p="next" title="Next (→ / Space / click)">→</button>
-      <button data-p="notes" title="Speaker notes (N)">Notes</button>
-      <button data-p="exit" title="Exit (Esc)">✕</button>
+      <button data-p="prev" class="icon" title="Back (←)" aria-label="Back"><svg class="ic" aria-hidden="true"><use href="#i-arrow-left"/></svg></button>
+      <button data-p="next" class="icon" title="Next (→ / Space / click)" aria-label="Next"><svg class="ic" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
+      <button data-p="notes" title="Speaker notes (N)"><svg class="ic" aria-hidden="true"><use href="#i-notebook-pen"/></svg><span>Notes</span></button>
+      <button data-p="exit" class="icon" title="Exit (Esc)" aria-label="Exit"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
     </div>
     <video id="presentVideo" playsinline muted hidden></video>
     <div id="presentNotes" class="present-notes" hidden></div>
@@ -103,20 +124,20 @@
       <h2>Manim code</h2>
       <div class="row wrap">
         <div class="seg" role="radiogroup">
-          <button type="button" data-mode="slides" class="on">Slides (click-through)</button>
-          <button type="button" data-mode="scene">Plain Scene</button>
+          <button type="button" data-mode="slides" class="on"><svg class="ic" aria-hidden="true"><use href="#i-presentation"/></svg><span>Slides (click-through)</span></button>
+          <button type="button" data-mode="scene"><svg class="ic" aria-hidden="true"><use href="#i-film"/></svg><span>Plain Scene</span></button>
         </div>
         <span class="grow"></span>
-        <button type="button" id="resetCode" title="Throw away your edits and regenerate from the slides">Regenerate from slides</button>
+        <button type="button" id="resetCode" title="Throw away your edits and regenerate from the slides"><svg class="ic" aria-hidden="true"><use href="#i-refresh-cw"/></svg><span>Regenerate from slides</span></button>
       </div>
       <p id="exportHelp" class="help"></p>
       <textarea id="code" spellcheck="false"></textarea>
       <div class="row wrap">
-        <button type="button" id="copyCode">Copy</button>
-        <button type="button" id="dlCode">Download lesson.py</button>
+        <button type="button" id="copyCode"><svg class="ic" aria-hidden="true"><use href="#i-clipboard-copy"/></svg><span>Copy</span></button>
+        <button type="button" id="dlCode"><svg class="ic" aria-hidden="true"><use href="#i-download"/></svg><span>Download lesson.py</span></button>
         <span class="grow"></span>
-        <button type="button" id="renderCode" class="accent">Render this code</button>
-        <button value="close">Close</button>
+        <button type="button" id="renderCode" class="accent"><svg class="ic" aria-hidden="true"><use href="#i-clapperboard"/></svg><span>Render this code</span></button>
+        <button value="close"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span>Close</span></button>
       </div>
     </form>
   </dialog>
@@ -134,7 +155,7 @@
           </select>
         </label>
         <span class="grow"></span>
-        <button type="button" id="startRender" class="accent">Render</button>
+        <button type="button" id="startRender" class="accent"><svg class="ic" aria-hidden="true"><use href="#i-clapperboard"/></svg><span>Render</span></button>
       </div>
       <div class="renderview">
         <canvas id="renderPreview" width="1280" height="720"></canvas>
@@ -143,10 +164,10 @@
       <p id="renderStatus" class="help" role="status"></p>
       <pre id="renderError" class="err" hidden></pre>
       <div class="row wrap">
-        <button type="button" id="dlVideo" hidden>Download MP4</button>
-        <button type="button" id="presentVideoBtn" hidden class="primary">Present this render</button>
+        <button type="button" id="dlVideo" hidden><svg class="ic" aria-hidden="true"><use href="#i-download"/></svg><span>Download MP4</span></button>
+        <button type="button" id="presentVideoBtn" hidden class="primary"><svg class="ic" aria-hidden="true"><use href="#i-presentation"/></svg><span>Present this render</span></button>
         <span class="grow"></span>
-        <button value="close">Close</button>
+        <button value="close"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span>Close</span></button>
       </div>
     </form>
   </dialog>
@@ -161,12 +182,29 @@
       <label class="fld" id="newCatRow" hidden><span>New category</span><input id="newCat" placeholder="e.g. Logic gates" maxlength="40"></label>
       <div class="row">
         <span class="grow"></span>
-        <button type="button" onclick="this.closest('dialog').close()">Cancel</button>
-        <button type="submit" class="accent">Save shape</button>
+        <button type="button" onclick="this.closest('dialog').close()"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span>Cancel</span></button>
+        <button type="submit" class="accent"><svg class="ic" aria-hidden="true"><use href="#i-bookmark-plus"/></svg><span>Save shape</span></button>
       </div>
     </form>
   </dialog>
 
+  <dialog id="lookDlg">
+    <form method="dialog" class="dlg">
+      <h2>Theme and style</h2>
+      <p class="help">The theme sets the editor's colours and the style sets its shape and feel. Your lesson's slides keep their own background and colours.</p>
+      <h3>Style</h3>
+      <div id="styleList" class="stylelist"></div>
+      <h3>Theme</h3>
+      <div id="themeList" class="themelist"></div>
+      <div class="row wrap">
+        <label class="chk"><input type="checkbox" id="followSystem"> Switch between light and dark with the system</label>
+        <span class="grow"></span>
+        <button value="close" class="accent"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span>Done</span></button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="tlMenu" class="menu" hidden></div>
   <div id="toast" class="toast" hidden></div>
   <script type="module" src="js/app.js"></script>
 </body>

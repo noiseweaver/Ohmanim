@@ -55,6 +55,7 @@
           <g id="overlay"></g>
         </svg>
         <span id="hint" class="hint" hidden></span>
+        <input id="inplace" class="inplace" hidden spellcheck="false" aria-label="Edit text">
       </div>
 
       <div class="dock" role="toolbar" aria-label="Tools and shapes">
@@ -67,6 +68,11 @@
         <div id="catBar" class="cats"></div>
         <button id="searchBtn" class="icon" title="Search shapes" aria-label="Search shapes"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg></button>
         <span class="grow"></span>
+        <div class="zoomctl" role="group" aria-label="Zoom">
+          <button id="zoomOut" class="icon" title="Zoom out (Ctrl −)" aria-label="Zoom out"><svg class="ic" aria-hidden="true"><use href="#i-zoom-out"/></svg></button>
+          <button id="zoomFit" title="Fit the slide (Ctrl 0)" aria-label="Fit the slide">100%</button>
+          <button id="zoomIn" class="icon" title="Zoom in (Ctrl +). Ctrl+scroll or pinch zooms at the pointer; Space+drag or middle-drag pans." aria-label="Zoom in"><svg class="ic" aria-hidden="true"><use href="#i-zoom-in"/></svg></button>
+        </div>
         <button id="gridBtn" class="icon" title="Grid and snapping" aria-label="Grid and snapping" aria-haspopup="menu"><svg class="ic" aria-hidden="true"><use href="#i-grid-3x3"/></svg></button>
         <button id="snapBtn" class="icon toggle on" title="Snap to grid" aria-label="Snap to grid" aria-pressed="true"><svg class="ic" aria-hidden="true"><use href="#i-magnet"/></svg></button>
         <button id="ghostBtn" class="icon toggle on" title="Show what fades out from the previous slide" aria-label="Show previous slide" aria-pressed="true"><svg class="ic" aria-hidden="true"><use href="#i-layers"/></svg></button>

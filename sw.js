@@ -1,6 +1,6 @@
 // Offline support: the app shell is cached on install; everything else (Pyodide,
 // Python packages from the CDN, KaTeX fonts) is cached the first time it loads. Bump VERSION to ship updates.
-const VERSION = 'mv-9';
+const VERSION = 'mv-10';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png',
   'js/app.js', 'js/icons.js', 'js/motion.js', 'js/backgrounds.js', 'js/store.js', 'js/voice.js', 'js/themes.js', 'js/components.js', 'js/render.js', 'js/player.js', 'js/export.js', 'js/demo.js',

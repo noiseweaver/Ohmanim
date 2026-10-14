@@ -155,11 +155,11 @@ function renderOverlay() {
   }
   const o = selected();
   if (o && objs.length === 1 && REG[o.type].ends) {
-    s += `<circle class="handle" data-handle="a" cx="${fx(o.x)}" cy="${fx(-o.y)}" r="0.11"/>`;
-    s += `<circle class="handle" data-handle="b" cx="${fx(o.x + o.dx)}" cy="${fx(-(o.y + o.dy))}" r="0.11"/>`;
+    s += `<circle class="handle" data-handle="a" cx="${fx(o.x)}" cy="${fx(-o.y)}" r="${fx(0.11 * view.k)}"/>`;
+    s += `<circle class="handle" data-handle="b" cx="${fx(o.x + o.dx)}" cy="${fx(-(o.y + o.dy))}" r="${fx(0.11 * view.k)}"/>`;
   }
   if (o && objs.length === 1 && o.type === 'poly') {
-    o.pts.forEach(([px, py], i) => (s += `<circle class="handle" data-vertex="${i}" cx="${fx(o.x + px)}" cy="${fx(-(o.y + py))}" r="0.09"/>`));
+    o.pts.forEach(([px, py], i) => (s += `<circle class="handle" data-vertex="${i}" cx="${fx(o.x + px)}" cy="${fx(-(o.y + py))}" r="${fx(0.09 * view.k)}"/>`));
   }
   if (drag?.kind === 'marquee') {
     const { x0, y0, x1, y1 } = drag;
@@ -168,8 +168,10 @@ function renderOverlay() {
   if (drawing) {
     const pts = drawing.pts.concat(drawing.hover ? [drawing.hover] : []);
     s += `<polyline class="drawline" points="${pts.map(([x, y]) => `${fx(x)},${fx(-y)}`).join(' ')}"/>`;
-    drawing.pts.forEach(([x, y], i) => (s += `<circle class="handle${i === 0 ? ' first' : ''}" cx="${fx(x)}" cy="${fx(-y)}" r="${i === 0 ? 0.12 : 0.07}"/>`));
+    drawing.pts.forEach(([x, y], i) => (s += `<circle class="handle${i === 0 ? ' first' : ''}" cx="${fx(x)}" cy="${fx(-y)}" r="${fx((i === 0 ? 0.12 : 0.07) * view.k)}"/>`));
   }
+  if (drag?.guides) for (const [a, v] of drag.guides) s += a === 'x' ? `<line class="guide" x1="${fx(v)}" y1="-6" x2="${fx(v)}" y2="6"/>` : `<line class="guide" x1="-9" y1="${fx(-v)}" x2="9" y2="${fx(-v)}"/>`;
+  if (view.w > FW_ + 1e-6) s += `<rect class="slideframe" x="${-FW_ / 2}" y="-4" width="${FW_}" height="8"/>`;
   $('#overlay').innerHTML = s;
 }
 
@@ -201,11 +203,17 @@ function finishDrawing(closed) {
 
 let drag = null;
 stage.addEventListener('pointerdown', (e) => {
+  if (e.button === 1 || (e.button === 0 && spaceDown)) { startPan(e); return; }
   if (e.button !== 0) return;
   const [x, y] = svgPoint(e);
   const handle = e.target.closest('[data-handle]');
   const vertex = e.target.closest('[data-vertex]');
   const g = e.target.closest('#objLayer > g');
+  // The stage re-renders on pointerup, so the browser's dblclick can lose its target: spot the
+  // second press on the same object here instead.
+  const now = performance.now(), again = g && tool !== 'draw' && lastPress.id === g.dataset.id && now - lastPress.t < 400;
+  lastPress = { id: g?.dataset.id, t: again ? 0 : now };
+  if (again && !handle && !vertex) { e.preventDefault(); editInPlace(g.dataset.id); return; }
   stage.setPointerCapture(e.pointerId);
   if (tool === 'draw') {
     const p = [snap(x), snap(y)];
@@ -243,7 +251,7 @@ stage.addEventListener('pointerdown', (e) => {
     }
     if (!isSel(id)) setSelection([id]);
     const start = snapshot();
-    drag = { kind: 'move', px: x, py: y, start, moved: false, orig: selectedAll().map((o) => ({ o, x: o.x, y: o.y })) };
+    drag = { kind: 'move', px: x, py: y, start, moved: false, orig: selectedAll().map((o) => ({ o, x: o.x, y: o.y })), ...guideSetup() };
     renderStage(); renderInspector();
   } else {
     if (!e.shiftKey) setSelection([]);
@@ -266,8 +274,11 @@ stage.addEventListener('pointermove', (e) => {
   }
   if (drag.kind === 'move') {
     const dx = x - drag.px, dy = y - drag.py;
+    // Smart guides: line up edges and centres with other objects and the slide (Alt turns them off).
+    const g = e.altKey ? { dx: null, dy: null, lines: [] } : guideSnap(drag, dx, dy);
+    drag.guides = g.lines;
     for (const m of drag.orig) {
-      const nx = snap(m.x + dx), ny = snap(m.y + dy);
+      const nx = g.dx !== null ? fx(m.x + g.dx) : snap(m.x + dx), ny = g.dy !== null ? fx(m.y + g.dy) : snap(m.y + dy);
       if (nx !== m.o.x || ny !== m.o.y) { m.o.x = nx; m.o.y = ny; drag.moved = true; }
       const gg = $(`#objLayer > g[data-id="${m.o.id}"]`);
       if (gg) gg.innerHTML = objectSVG(m.o, { hit: true });
@@ -304,6 +315,7 @@ stage.addEventListener('pointerup', () => {
   persist();
   renderAll();
 });
+let lastPress = {};
 stage.addEventListener('dblclick', () => { if (drawing) finishDrawing(false); });
 function pushUndo(snap) { undoStack.push(snap); redoStack.length = 0; lastCoalesce = null; }
 function lastWireColor() { const w = [...slide().objects].reverse().find((o) => o.type === 'wire'); return w ? w.color : '#ffffff'; }
@@ -644,8 +656,9 @@ function renderInspector() {
     const same = many.every((q) => q.color === many[0].color);
     box.innerHTML = `<div class="sec" data-scope="multi">${field('Colour', 'color', 'color', same ? many[0].color : '#ffffff')}</div>
       <div class="btnrow"><button data-act="group" class="accent">${icon('group')}Group</button><button data-act="saveShape">${icon('bookmark-plus')}Save as shape</button><button data-act="tgroup" title="Group their tracks in the timeline; the objects stay separate">${icon('folder')}Group in timeline</button></div>
+      <h4>Align</h4>${alignRow(many.length)}
       <div class="btnrow"><button data-act="rotate">${icon('rotate-cw')}Rotate 90°</button><button data-act="dup">${icon('copy')}Duplicate</button><button data-act="del">${icon('trash-2')}Delete</button></div>
-      <div class="help">Shift-click or drag a box to change the selection. <kbd>Ctrl G</kbd> groups.</div>`;
+      <div class="help">Shift-click or drag a box to change the selection. <kbd>Ctrl G</kbd> groups, <kbd>Ctrl C</kbd> / <kbd>Ctrl V</kbd> copy to any slide.</div>`;
     return;
   }
   if (!o) {
@@ -663,7 +676,7 @@ function renderInspector() {
         The <i>timeline</i> under the canvas shows every animation on this slide: one track per object and one column per click. Drag a block to another click, click it to change the animation, or use <b>+</b> to add an emphasis.<br><br>
         <b>Duplicate slide</b> (${icon('copy')}) continues a scene: anything you move, recolour or change (like closing a switch) morphs smoothly into place, and anything you delete fades out.
       </div>
-      <div class="help"><kbd>W</kbd> wire · <kbd>P</kbd> draw · <kbd>V</kbd> select · <kbd>R</kbd> rotate · <kbd>Del</kbd> delete · <kbd>Ctrl D</kbd> duplicate · <kbd>Ctrl G</kbd> group · <kbd>Ctrl A</kbd> select all · arrows nudge</div>`;
+      <div class="help"><kbd>W</kbd> wire · <kbd>P</kbd> draw · <kbd>V</kbd> select · <kbd>R</kbd> rotate · <kbd>Del</kbd> delete · <kbd>Ctrl D</kbd> duplicate · <kbd>Ctrl G</kbd> group · <kbd>Ctrl A</kbd> select all · <kbd>Ctrl C</kbd>/<kbd>V</kbd> copy, paste · arrows nudge · double-click text to type · <kbd>Ctrl</kbd>+scroll zoom, <kbd>Space</kbd>+drag pan</div>`;
     return;
   }
   const d = REG[o.type];
@@ -678,7 +691,7 @@ function renderInspector() {
   if (o.type !== 'group') h += `<div class="pair">${field('Colour', 'color', 'color', o.color)}${d.fillable ? field('Fill', 'fill', 'color', o.fill) : ''}</div>`;
   if (d.fillable) h += field('Fill opacity', 'fo', 'range', o.fo, { step: 0.05, min: 0 }).replace('type="range"', 'type="range" max="1"');
   if (o.type !== 'text' && o.type !== 'math' && o.type !== 'group') h += field('Line width', 'sw', 'number', o.sw, { step: 0.5, min: 0 });
-  h += '<h4>Position</h4><div class="pair">' + field('x', 'x', 'number', o.x, { step: 0.25 }) + field('y', 'y', 'number', o.y, { step: 0.25 }) + '</div>';
+  h += '<h4>Position</h4>' + alignRow(1) + '<div class="pair">' + field('x', 'x', 'number', o.x, { step: 0.25 }) + field('y', 'y', 'number', o.y, { step: 0.25 }) + '</div>';
   if (d.ends) h += '<div class="pair">' + field('Δx', 'dx', 'number', o.dx, { step: 0.25 }) + field('Δy', 'dy', 'number', o.dy, { step: 0.25 }) + '</div>';
   else h += '<div class="pair">' + field('Rotate°', 'rot', 'number', o.rot, { step: 15 }) + field('Scale', 'scale', 'number', o.scale, { step: 0.1, min: 0.1 }) + '</div>';
   h += '<h4>Animation</h4>';
@@ -749,6 +762,7 @@ function objAction(act) {
     });
   }
   if (act === 'front') edit(() => { slide().objects = slide().objects.filter((q) => !isSel(q.id)).concat(objs); });
+  if (act.startsWith('al-') || act.startsWith('dist-')) return alignObjects(act);
   if (act === 'dup') edit(() => {
     const copies = objs.map((q) => {
       const c = { ...reId(clone(q)), x: q.x + 0.5, y: q.y - 0.5 };
@@ -1565,6 +1579,14 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'F5') { e.preventDefault(); commands.present(); return; }
   if (typing) return;
   if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); objAction('dup'); return; }
+  if (mod && e.key.toLowerCase() === 'c' && selected()) { e.preventDefault(); copyObjects(); return; }
+  if (mod && e.key.toLowerCase() === 'x' && selected()) { e.preventDefault(); copyObjects(); objAction('del'); toast('Cut. Ctrl+V pastes on any slide.'); return; }
+  if (mod && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteObjects(); return; }
+  if (mod && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoomBy(1.25); return; }
+  if (mod && e.key === '-') { e.preventDefault(); zoomBy(1 / 1.25); return; }
+  if (mod && e.key === '0') { e.preventDefault(); setView(null); return; }
+  if (e.key === ' ' && !e.repeat) { e.preventDefault(); spaceDown = true; stage.classList.add('space'); return; }
+  if (e.key === 'Enter' && selected() && !drawing) { e.preventDefault(); editInPlace(sel); return; }
   if (drawing && e.key === 'Enter') { finishDrawing(false); return; }
   if (drawing && e.key === 'Backspace') { e.preventDefault(); drawing.pts.pop(); if (!drawing.pts.length) drawing = null; renderOverlay(); return; }
   if (e.key === 'Escape') { if (drawing) { drawing = null; renderOverlay(); return; } setTool('select'); setSelection([]); renderAll(); return; }
@@ -1583,6 +1605,222 @@ document.addEventListener('keydown', (e) => {
     renderStage(); renderInspector(); renderSlides();
   }
 });
+
+// ---- zoom and pan ---------------------------------------------------------------------
+// The canvas shows a window onto the slide: centre (cx, cy) in Manim units and a width.
+const FW_ = 14.2222;
+const view = { cx: 0, cy: 0, w: FW_, k: 1 };
+let spaceDown = false;
+function setView(v) {
+  if (!v) v = { cx: 0, cy: 0, w: FW_ };
+  view.w = Math.min(FW_ * 1.6, Math.max(FW_ / 10, v.w));
+  view.k = view.w / FW_;
+  // Keep some of the slide on screen.
+  const lim = (c, half) => Math.max(-half, Math.min(half, c));
+  view.cx = lim(v.cx, FW_ / 2); view.cy = lim(v.cy, 4);
+  const h = (view.w * 8) / FW_;
+  stage.setAttribute('viewBox', `${fx(view.cx - view.w / 2)} ${fx(-view.cy - h / 2)} ${fx(view.w)} ${fx(h)}`);
+  stage.style.setProperty('--k', view.k);
+  $('#zoomFit').textContent = Math.round(100 / view.k) + '%';
+  renderOverlay();
+}
+// Zoom by factor f, keeping the point under the pointer (or the centre) where it is.
+function zoomBy(f, at = null) {
+  const [px, py] = at || [view.cx, view.cy];
+  const w = Math.min(FW_ * 1.6, Math.max(FW_ / 10, view.w / f)), r = w / view.w;
+  setView({ cx: px + (view.cx - px) * r, cy: py + (view.cy - py) * r, w });
+}
+stage.addEventListener('wheel', (e) => {
+  if (e.ctrlKey || e.metaKey) { e.preventDefault(); zoomBy(Math.exp(-e.deltaY * 0.0025), svgPoint(e)); return; }
+  if (view.k < 0.999 || e.shiftKey) {
+    // Zoomed in: the wheel pans. Shift turns vertical scrolling sideways.
+    e.preventDefault();
+    const r = stage.getBoundingClientRect(), u = view.w / r.width;
+    const dx = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX, dy = e.shiftKey && !e.deltaX ? 0 : e.deltaY;
+    setView({ cx: view.cx + dx * u, cy: view.cy - dy * u, w: view.w });
+  }
+}, { passive: false });
+function startPan(e) {
+  e.preventDefault();
+  const r = stage.getBoundingClientRect(), u = view.w / r.width;
+  const x0 = e.clientX, y0 = e.clientY, c0 = { ...view };
+  stage.setPointerCapture(e.pointerId);
+  stage.classList.add('panning');
+  const move = (ev) => setView({ cx: c0.cx - (ev.clientX - x0) * u, cy: c0.cy + (ev.clientY - y0) * u, w: c0.w });
+  const up = () => { stage.removeEventListener('pointermove', move); stage.removeEventListener('pointerup', up); stage.classList.remove('panning'); };
+  stage.addEventListener('pointermove', move);
+  stage.addEventListener('pointerup', up);
+}
+document.addEventListener('keyup', (e) => { if (e.key === ' ') { spaceDown = false; stage.classList.remove('space'); } });
+window.addEventListener('blur', () => { spaceDown = false; stage.classList.remove('space'); });
+$('#zoomIn').addEventListener('click', () => zoomBy(1.25));
+$('#zoomOut').addEventListener('click', () => zoomBy(1 / 1.25));
+$('#zoomFit').addEventListener('click', () => setView(null));
+// Pinch to zoom on touch screens.
+{
+  const pts = new Map();
+  let pinch = null;
+  stage.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return;
+    pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      drag = null;
+      pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), w: view.w, mid: svgPoint({ clientX: (a[0] + b[0]) / 2, clientY: (a[1] + b[1]) / 2 }) };
+    }
+  }, true);
+  stage.addEventListener('pointermove', (e) => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pinch && pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      const f = Math.hypot(a[0] - b[0], a[1] - b[1]) / pinch.d;
+      zoomBy((pinch.w / f) ? view.w / (pinch.w / f) : 1, pinch.mid);
+    }
+  }, true);
+  const end = (e) => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; };
+  stage.addEventListener('pointerup', end, true);
+  stage.addEventListener('pointercancel', end, true);
+}
+
+// ---- smart guides -------------------------------------------------------------------
+const xsOf = (b) => [b.x0, (b.x0 + b.x1) / 2, b.x1], ysOf = (b) => [b.y0, (b.y0 + b.y1) / 2, b.y1];
+function unionBox(objs) {
+  const bs = objs.map((o) => bbox(worldPrims(o)));
+  return { x0: Math.min(...bs.map((b) => b.x0)), y0: Math.min(...bs.map((b) => b.y0)), x1: Math.max(...bs.map((b) => b.x1)), y1: Math.max(...bs.map((b) => b.y1)) };
+}
+// Where the moving selection can line up: other objects' edges and centres, and the slide's.
+function guideSetup() {
+  const moving = selectedAll();
+  if (!moving.length) return {};
+  const others = slide().objects.filter((o) => !isSel(o.id));
+  const gx = [0, -FW_ / 2, FW_ / 2], gy = [0, -4, 4];
+  for (const o of others) { const b = bbox(worldPrims(o)); gx.push(...xsOf(b)); gy.push(...ysOf(b)); }
+  return { box0: unionBox(moving), gx, gy };
+}
+function guideSnap(d, dx, dy) {
+  if (!d.box0) return { dx: null, dy: null, lines: [] };
+  const thr = 0.12 * view.k;
+  const b = { x0: d.box0.x0 + dx, x1: d.box0.x1 + dx, y0: d.box0.y0 + dy, y1: d.box0.y1 + dy };
+  const best = (mine, cands) => {
+    let hit = null;
+    for (const m of mine) for (const c of cands) { const off = c - m; if (Math.abs(off) < thr && (!hit || Math.abs(off) < Math.abs(hit.off))) hit = { off, at: c }; }
+    return hit;
+  };
+  const hx = best(xsOf(b), d.gx), hy = best(ysOf(b), d.gy);
+  const lines = [];
+  if (hx) lines.push(['x', hx.at]);
+  if (hy) lines.push(['y', hy.at]);
+  return { dx: hx ? dx + hx.off : null, dy: hy ? dy + hy.off : null, lines };
+}
+
+// ---- align and distribute ------------------------------------------------------------
+function alignObjects(act) {
+  const objs = selectedAll();
+  if (!objs.length) return;
+  // One object lines up with the slide (half a unit in from the edges); several with each other.
+  const M = 0.5;
+  const ref = objs.length === 1 ? { x0: -FW_ / 2 + M, x1: FW_ / 2 - M, y0: -4 + M, y1: 4 - M } : unionBox(objs);
+  if (objs.length === 1) Object.assign(ref, act === 'al-hcenter' || act === 'al-vcenter' ? { x0: -FW_ / 2, x1: FW_ / 2, y0: -4, y1: 4 } : {});
+  const move = (o, mx, my) => { o.x = fx(o.x + mx); o.y = fx(o.y + my); };
+  edit(() => {
+    if (act.startsWith('dist-')) {
+      if (objs.length < 3) return;
+      const h = act === 'dist-h';
+      const items = objs.map((o) => ({ o, b: bbox(worldPrims(o)) })).sort((a, c) => (h ? a.b.x0 - c.b.x0 : a.b.y0 - c.b.y0));
+      const size = (b) => (h ? b.x1 - b.x0 : b.y1 - b.y0);
+      const first = items[0].b, last = items.at(-1).b;
+      const span = (h ? last.x1 - first.x0 : last.y1 - first.y0) - items.reduce((t, it) => t + size(it.b), 0);
+      const gap = span / (items.length - 1);
+      let pos = h ? first.x0 : first.y0;
+      for (const it of items) { const d = pos - (h ? it.b.x0 : it.b.y0); move(it.o, h ? d : 0, h ? 0 : d); pos += size(it.b) + gap; }
+      return;
+    }
+    for (const o of objs) {
+      const b = bbox(worldPrims(o));
+      const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+      if (act === 'al-left') move(o, ref.x0 - b.x0, 0);
+      if (act === 'al-right') move(o, ref.x1 - b.x1, 0);
+      if (act === 'al-hcenter') move(o, (ref.x0 + ref.x1) / 2 - cx, 0);
+      if (act === 'al-top') move(o, 0, ref.y1 - b.y1);
+      if (act === 'al-bottom') move(o, 0, ref.y0 - b.y0);
+      if (act === 'al-vcenter') move(o, 0, (ref.y0 + ref.y1) / 2 - cy);
+    }
+  });
+  renderStage(); renderInspector(); renderSlides();
+}
+function alignRow(n) {
+  const T = n === 1 ? ' on the slide' : '';
+  const b = (a, t) => `<button data-act="${a}" class="icon" title="${t}${T}" aria-label="${t}${T}">${icon(a)}</button>`;
+  return `<div class="alignrow">${b('al-left', 'Align left')}${b('al-hcenter', 'Centre horizontally')}${b('al-right', 'Align right')}<span class="sep"></span>${b('al-top', 'Align top')}${b('al-vcenter', 'Centre vertically')}${b('al-bottom', 'Align bottom')}` +
+    (n >= 3 ? `<span class="sep"></span>${b('dist-h', 'Space evenly across')}${b('dist-v', 'Space evenly down')}` : '') + '</div>';
+}
+
+// ---- copy and paste ---------------------------------------------------------------------
+// The clipboard lives in localStorage so it works across slides, lessons and tabs.
+const CLIP = 'manimvis.clipboard.v1';
+function copyObjects() {
+  const objs = selectedAll().map(clone);
+  try { localStorage.setItem(CLIP, JSON.stringify({ from: slide().id, objs })); } catch {}
+  toast(`Copied ${objs.length} object${objs.length === 1 ? '' : 's'}`);
+}
+function pasteObjects() {
+  let c = null;
+  try { c = JSON.parse(localStorage.getItem(CLIP)); } catch {}
+  if (!c?.objs?.length) return toast('Nothing to paste yet. Select something and press Ctrl+C.');
+  // Pasting where the originals still are nudges the copies so they're visible.
+  const here = c.objs.some((o) => slide().objects.some((q) => q.id === o.id && q.x === o.x && q.y === o.y));
+  const copies = c.objs.map((q) => {
+    const o = reId(clone(q));
+    if (here) { o.x = fx(o.x + 0.5); o.y = fx(o.y - 0.5); }
+    delete o.step; delete o.emphs; delete o.emph; delete o.mstep;
+    if (o.label && REG[o.type] && !REG[o.type].noLabel && slide().objects.some((x) => x.label === o.label)) o.label = nextLabel(o.label.replace(/\d+$/, ''));
+    return o;
+  }).filter((o) => REG[o.type]);
+  edit(() => { slide().objects.push(...copies); setSelection(copies.map((o) => o.id)); });
+  renderAll();
+  copies.forEach((o) => appearObj(o.id));
+}
+
+// ---- edit text on the canvas -------------------------------------------------------------
+// Double-click (or Enter) on text, maths or a labelled part to type straight onto the slide.
+function editInPlace(id) {
+  const o = slide().objects.find((q) => q.id === id);
+  if (!o) return;
+  const key = o.type === 'text' || o.type === 'math' ? 'text' : !REG[o.type]?.noLabel && o.type !== 'group' ? 'label' : null;
+  if (!key) return;
+  const inp = $('#inplace'), box = $('.stagebox').getBoundingClientRect(), sr = stage.getBoundingClientRect();
+  const b = bbox(worldPrims(o));
+  const ctm = stage.getScreenCTM();
+  const toScreen = (x, y) => { const p = stage.createSVGPoint(); p.x = x; p.y = -y; const q = p.matrixTransform(ctm); return [q.x - box.left, q.y - box.top]; };
+  const [l, t] = toScreen(b.x0, b.y1), [r, bt] = toScreen(b.x1, b.y0);
+  const pxPerUnit = sr.width / view.w;
+  const size = key === 'text' ? (o.size || 48) : 24;
+  // Manim font_size 48 ≈ 0.67 units tall
+  const fpx = Math.max(12, Math.min(96, size * (0.67 / 48) * pxPerUnit * 0.8));
+  const before = o[key] ?? '';
+  inp.hidden = false;
+  inp.value = before;
+  inp.style.fontSize = fpx + 'px';
+  inp.style.fontFamily = key === 'text' ? `'MV ${o.font || fonts.lesson}', sans-serif` : 'inherit';
+  const w = Math.max(r - l + 40, 120);
+  inp.style.width = w + 'px';
+  inp.style.left = (l + r) / 2 - w / 2 + 'px';
+  inp.style.top = (key === 'label' ? t - fpx * 1.6 : (t + bt) / 2 - fpx * 0.75) + 'px';
+  inp.focus(); inp.select();
+  let done = false;
+  const finish = (keep) => {
+    if (done) return; done = true;
+    inp.hidden = true;
+    inp.oninput = inp.onkeydown = inp.onblur = null;
+    if (!keep) { o[key] = before; }
+    else if (inp.value !== before) { const v = inp.value; o[key] = before; edit(() => (o[key] = v)); }
+    renderStage(); renderInspector(); renderSlides(); renderTimeline();
+  };
+  inp.oninput = () => { o[key] = inp.value; const g = $(`#objLayer > g[data-id="${o.id}"]`); if (g) g.innerHTML = objectSVG(o, { hit: true }); };
+  inp.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); };
+  inp.onblur = () => finish(true);
+}
 
 // ---- backgrounds -------------------------------------------------------------------
 // The dialog edits the lesson background, or this slide's own one. The lesson's colour is

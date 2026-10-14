@@ -142,16 +142,20 @@ h3 { margin: 6px 0 0; font-size: 12px; color: var(--muted); font-family: var(--f
 #stage.wire, #stage.draw { cursor: crosshair; }
 .hint { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line); color: var(--text); font-size: 12px; padding: 4px 10px; border-radius: 999px; pointer-events: none; max-width: 90%; text-align: center; box-shadow: var(--shadow-pop); }
 #stage text:not([font-family]), #presentSvg text:not([font-family]), #slideList text:not([font-family]) { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-#grid line { stroke: currentColor; stroke-opacity: .07; stroke-width: .01; }
+#grid line { stroke: currentColor; stroke-opacity: .07; stroke-width: calc(.01 * var(--k, 1)); }
 #grid line.axis { stroke-opacity: .16; }
 #objLayer > g { cursor: move; }
 #objLayer > g.sel { filter: drop-shadow(0 0 .04px var(--sel)); }
-.selbox { fill: none; stroke: var(--sel); stroke-width: .02; stroke-dasharray: .08 .06; pointer-events: none; }
-.handle { fill: var(--sel); stroke: #000; stroke-width: .015; cursor: grab; }
-.marquee { fill: color-mix(in srgb, var(--sel) 8%, transparent); stroke: var(--sel); stroke-width: .015; stroke-dasharray: .06 .05; pointer-events: none; }
-.drawline { fill: none; stroke: var(--sel); stroke-width: .03; stroke-dasharray: .1 .06; pointer-events: none; }
-.handle.first { fill: none; stroke: var(--sel); stroke-width: .03; }
-.carried { fill: none; stroke: var(--accent2); stroke-width: .02; stroke-dasharray: .03 .05; pointer-events: none; }
+/* Overlay sizes scale with the zoom (--k = visible width / slide width) so they stay the same on screen. */
+#stage { --k: 1; }
+.selbox { fill: none; stroke: var(--sel); stroke-width: calc(.02 * var(--k)); stroke-dasharray: calc(.08 * var(--k)) calc(.06 * var(--k)); pointer-events: none; }
+.handle { fill: var(--sel); stroke: #000; stroke-width: calc(.015 * var(--k)); cursor: grab; }
+.marquee { fill: color-mix(in srgb, var(--sel) 8%, transparent); stroke: var(--sel); stroke-width: calc(.015 * var(--k)); stroke-dasharray: calc(.06 * var(--k)) calc(.05 * var(--k)); pointer-events: none; }
+.drawline { fill: none; stroke: var(--sel); stroke-width: calc(.03 * var(--k)); stroke-dasharray: calc(.1 * var(--k)) calc(.06 * var(--k)); pointer-events: none; }
+.handle.first { fill: none; stroke: var(--sel); stroke-width: calc(.03 * var(--k)); }
+.carried { fill: none; stroke: var(--accent2); stroke-width: calc(.02 * var(--k)); stroke-dasharray: calc(.03 * var(--k)) calc(.05 * var(--k)); pointer-events: none; }
+.guide { stroke: #ff3d9a; stroke-width: calc(.014 * var(--k)); pointer-events: none; }
+.slideframe { fill: none; stroke: var(--line); stroke-width: calc(.012 * var(--k)); pointer-events: none; }
 .mathfo { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; white-space: nowrap; }
 
 .dock { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: var(--panel); border-top: var(--border-w) solid var(--line); border-bottom: var(--border-w) solid var(--line); flex-wrap: wrap; }
@@ -416,3 +420,15 @@ button.slidetheme svg { flex: none; }
 .present-ui:has(.rec:not([hidden])) { opacity: 1; }
 @keyframes recpulse { 50% { opacity: .55; } }
 @media (prefers-reduced-motion: reduce) { .present-ui .rec { animation: none; } }
+
+/* ---- editing comfort ---- */
+.zoomctl { display: inline-flex; align-items: center; gap: 0; border: 1px solid var(--line); border-radius: var(--r-btn); overflow: hidden; }
+.zoomctl button { border: 0; border-radius: 0; background: transparent; }
+#zoomFit { min-width: 52px; font-variant-numeric: tabular-nums; font-size: 12px; padding: 4px 6px; justify-content: center; }
+#stage.panning, #stage.space { cursor: grab; }
+#stage.panning { cursor: grabbing; }
+.stagebox { position: relative; }
+.inplace { position: absolute; z-index: 5; background: color-mix(in srgb, var(--panel) 85%, transparent); color: var(--text); border: 1px solid var(--sel); border-radius: 4px; padding: 0 4px; outline: none; text-align: center; box-shadow: 0 0 0 3px color-mix(in srgb, var(--sel) 25%, transparent); }
+.alignrow { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 6px; }
+.alignrow button { padding: 4px; }
+.alignrow .sep { width: 1px; background: var(--line); margin: 2px 2px; }

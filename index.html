@@ -91,6 +91,7 @@
           <button id="tlToggle" class="icon" title="Show or hide the timeline" aria-label="Show or hide the timeline" aria-expanded="true"><svg class="ic" aria-hidden="true"><use href="#i-chevron-down"/></svg></button>
           <span class="tl-title">Timeline</span>
           <span class="tl-sub" id="tlSub"></span>
+          <button id="tlTake" class="tl-groupbtn" title="Present from this slide and talk: each click records the narration for the next click"><svg class="ic" aria-hidden="true"><use href="#i-mic"/></svg><span>Record voiceover</span></button>
           <button id="tlGroup" class="tl-groupbtn" disabled><svg class="ic" aria-hidden="true"><use href="#i-group"/></svg><span>Group tracks</span></button>
           <span class="grow"></span>
           <span class="tl-legend"><i class="k-enter"></i>Enter <i class="k-morph"></i>Morph <i class="k-emph"></i>Emphasis <i class="k-out"></i>Fade out</span>
@@ -111,13 +112,14 @@
       <g id="presentLayer"></g>
     </svg>
     <div class="present-ui">
+      <span id="presentRec" class="rec" hidden title="Recording narration: each click starts the next clip. Esc to finish.">REC</span>
       <span id="presentPos"></span>
       <button data-p="prev" class="icon" title="Back (←)" aria-label="Back"><svg class="ic" aria-hidden="true"><use href="#i-arrow-left"/></svg></button>
       <button data-p="next" class="icon" title="Next (→ / Space / click)" aria-label="Next"><svg class="ic" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
       <button data-p="notes" title="Speaker notes (N)"><svg class="ic" aria-hidden="true"><use href="#i-notebook-pen"/></svg><span>Notes</span></button>
       <button data-p="exit" class="icon" title="Exit (Esc)" aria-label="Exit"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
     </div>
-    <video id="presentVideo" playsinline muted hidden></video>
+    <video id="presentVideo" playsinline hidden></video>
     <div id="presentNotes" class="present-notes" hidden></div>
   </div>
 

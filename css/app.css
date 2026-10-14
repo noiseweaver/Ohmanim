@@ -399,3 +399,20 @@ button.slidetheme svg { flex: none; }
 .menu .help { max-width: 220px; padding: 4px 8px; font-size: 11px; color: var(--muted); }
 #gridBtn.on { color: var(--accent); }
 @media (max-width: 760px) { .bg-main { grid-template-columns: 1fr; } .bg-form { max-height: none; } }
+
+/* ---- narration ---- */
+.tl-name.tl-voice, .tl-cell.tl-voice { background: color-mix(in srgb, var(--danger) 6%, transparent); }
+.tl-name.tl-voice { color: var(--muted); gap: 6px; }
+.tl-rec { font-size: 11px; padding: 1px 7px; gap: 4px; background: transparent; border: 1px dashed color-mix(in srgb, var(--muted) 50%, transparent); color: var(--muted); opacity: 0; transition: opacity .15s; }
+.tl-rec .ic { width: 12px; height: 12px; }
+.tl-cell.tl-voice:hover .tl-rec, .tl-rec:focus-visible, .tl-rec.live { opacity: 1; }
+.tl-rec.live { border: 0; background: var(--danger); color: #fff; position: relative; overflow: hidden; }
+.tl-rec .lvl { position: absolute; left: 0; bottom: 0; width: 4px; height: 100%; background: #fff; transform-origin: bottom; transform: scaleY(.15); opacity: .8; }
+.vblk { position: relative; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 1px 7px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--danger) 22%, var(--panel2)); color: var(--text); cursor: pointer; line-height: 18px; overflow: hidden; min-width: 60px; }
+.vblk { isolation: isolate; }
+.vblk i { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in srgb, var(--danger) 35%, transparent); z-index: -1; }
+.vblk .ic { width: 12px; height: 12px; position: relative; }
+.present-ui .rec { color: #fff; background: #d33; padding: 2px 8px; border-radius: 999px; font-weight: 700; font-size: 11px; letter-spacing: .08em; animation: recpulse 1.2s ease-in-out infinite; }
+.present-ui:has(.rec:not([hidden])) { opacity: 1; }
+@keyframes recpulse { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .present-ui .rec { animation: none; } }

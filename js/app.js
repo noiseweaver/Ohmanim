@@ -6,7 +6,9 @@ import { demoProject } from './demo.js';
 import { renderCode, warmUp, onEngine } from './manim/engine.js';
 import { icon, installIcons } from './icons.js';
 import { pop, flash, appear, flip, shake } from './motion.js';
-import { bgOf, bgSVG, bgKey, isLight, BG_DEFAULT, FILLS, PATTERNS, FITS, PRESETS, importImage, usedAssets, assetFile, assetBytes } from './backgrounds.js';
+import { bgOf, bgSVG, bgKey, isLight, BG_DEFAULT, FILLS, PATTERNS, FITS, PRESETS, importImage, usedAssets, assetFile, assetBytes, mediaFile } from './backgrounds.js';
+import { saveAssets, loadAssets, pruneAssets } from './store.js';
+import { startRecording, releaseMic, playClip, stopClip, decode, toWav, fmtDur } from './voice.js';
 import { THEMES, STYLES, loadLook, saveLook, applyLook, themeSwatch, TEXT_ROLES, applySlideTheme, applyRole, slideSwatch, slidePalette } from './themes.js';
 
 installIcons();
@@ -41,6 +43,8 @@ const fx = (v) => Math.round(v * 1000) / 1000;
 
 // ---- state -------------------------------------------------------------------
 let project = load() || demoProject();
+// Images and narration are kept in IndexedDB (see store.js); older lessons carried them inline.
+project.assets = { ...(await loadAssets()), ...(project.assets || {}) };
 let cur = 0;          // slide index
 let sel = null;       // primary selected object id
 let extra = new Set(); // further selected ids (multi-select)
@@ -63,8 +67,9 @@ let warnedFull = false;
 function persist() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    try { localStorage.setItem(STORE, JSON.stringify(project)); warnedFull = false; }
-    catch { if (!warnedFull) { warnedFull = true; toast('The browser is out of room for this lesson (large images?). Use Save to keep a copy.'); } }
+    const full = () => { if (!warnedFull) { warnedFull = true; toast('The browser is out of room for this lesson. Use Save to keep a copy.'); } };
+    try { localStorage.setItem(STORE, JSON.stringify({ ...project, assets: undefined })); warnedFull = false; } catch { full(); }
+    saveAssets(project.assets).then((ok) => ok || full());
   }, 250);
 }
 // Background images live in project.assets. Undo snapshots leave them out (they can be
@@ -819,7 +824,12 @@ const commands = {
     const beats = timeline(project).filter((b) => b.slide === cur);
     let state = stateBefore(beats[0]);
     $('#objLayer').style.opacity = 0; $('#ghostLayer').style.opacity = 0; $('#overlay').style.display = 'none';
-    for (const b of beats) { state = await player.play(state, b); if (!state) break; await sleep(350); }
+    for (const b of beats) {
+      const v = playClip(project.assets?.[b.voice]);
+      state = await player.play(state, b);
+      if (!state) { stopClip(); break; }
+      await v; await sleep(350);
+    }
     $('#objLayer').style.opacity = ''; $('#ghostLayer').style.opacity = ''; $('#overlay').style.display = '';
     renderStage();
   },
@@ -859,12 +869,25 @@ const generatedCode = (mode = 'slides') => exportPython(project, { mode });
 const currentCode = () => project.customCode || generatedCode('slides');
 
 // Background image files the code loads: [{name, type, bytes}].
-function renderAssets() { return usedAssets(project).map((id) => { const a = project.assets[id]; return { name: assetFile(id, a), type: a.type, bytes: assetBytes(a).buffer }; }); }
-$('#dlAssets').addEventListener('click', () => renderAssets().forEach((a, i) => setTimeout(() => download(new Blob([a.bytes], { type: a.type }), a.name), i * 300)));
+function renderAssets() { return usedAssets(project, 'image').map((id) => { const a = project.assets[id]; return { name: assetFile(id, a), type: a.type, bytes: assetBytes(a).buffer }; }); }
+// Narration as PCM for the in-browser renderer, keyed by the file name the code uses.
+async function narrationPCM() {
+  const out = {};
+  for (const id of usedAssets(project, 'audio')) { try { out[mediaFile(id, project.assets[id])] = await decode(project.assets[id]); } catch {} }
+  return out;
+}
+$('#dlAssets').addEventListener('click', async () => {
+  let i = 0;
+  for (const id of usedAssets(project)) {
+    const a = project.assets[id];
+    const blob = a.kind === 'audio' ? await toWav(a) : new Blob([assetBytes(a)], { type: a.type });
+    setTimeout(() => download(blob, mediaFile(id, a)), i++ * 300);
+  }
+});
 function openCode() {
   const n = usedAssets(project).length;
   $('#dlAssets').hidden = !n;
-  $('#dlAssets').querySelector('span').textContent = n > 1 ? `Download ${n} images` : 'Download image';
+  $('#dlAssets').querySelector('span').textContent = n > 1 ? `Download ${n} media files` : 'Download media file';
   $('#code').value = project.customCode || generatedCode(exportMode);
   refreshCodeHelp();
   $('#exportDlg').showModal();
@@ -934,7 +957,8 @@ async function startRender() {
   const [width, height, fps] = $('#quality').value.split('x').map(Number);
   const t0 = performance.now();
   try {
-    const res = await renderCode(renderCodeText, { width, height, fps, assets: renderAssets() }, (m) => {
+    const audio = await narrationPCM();
+    const res = await renderCode(renderCodeText, { width, height, fps, assets: renderAssets(), audio }, (m) => {
       if (m.type === 'status') $('#renderStatus').textContent = m.text;
       if (m.type === 'preview') {
         previewCtx.drawImage(m.bitmap, 0, 0, 1280, 720); m.bitmap.close();
@@ -972,7 +996,8 @@ const presenter = {
   // forceVideo: present the latest render even if the slides changed since.
   open(fromSlide, forceVideo = false) {
     this.beats = timeline(project);
-    const useVideo = lastRender && (forceVideo || lastRender.code === currentCode());
+    const useVideo = !this.take && lastRender && (forceVideo || lastRender.code === currentCode());
+    $('#presentRec').hidden = !this.take;
     this.mode = useVideo ? 'video' : 'live';
     $('#present').hidden = false;
     document.documentElement.requestFullscreen?.().catch(() => {});
@@ -1000,6 +1025,8 @@ const presenter = {
   },
   close() {
     this.player.stop();
+    stopClip();
+    if (this.take) this.take.finish();
     cancelAnimationFrame(this.raf); video.pause();
     $('#present').hidden = true;
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -1044,6 +1071,8 @@ const presenter = {
     this.busy = true;
     this.pos();
     this.setBg(this.beats[this.i].slide);
+    if (this.take) await this.take.cut(this.beats[this.i]);
+    else playClip(project.assets?.[this.beats[this.i].voice]);
     const target = applyBeat(this.state, this.beats[this.i]);
     const res = await this.player.play(this.state, this.beats[this.i]);
     this.state = target;
@@ -1057,7 +1086,7 @@ const presenter = {
       this.i--; video.currentTime = this.markers[this.i].time - 0.001; this.pos();
       return;
     }
-    this.player.stop(); this.busy = false;
+    this.player.stop(); this.busy = false; stopClip();
     this.i--;
     this.state = new Map();
     for (let k = 0; k <= this.i; k++) this.state = applyBeat(this.state, this.beats[k]);
@@ -1120,9 +1149,11 @@ function renderTimeline() {
   const prev = prevSlide()?.objects || [];
   const leaving = prev.filter((p) => !s.objects.some((o) => o.id === p.id));
   const blocks = slideBlocks();
-  $('#tlSub').textContent = `Slide ${cur + 1} · ${blocks.length ? new Set(blocks.map((b) => b.step)).size + ' click' + (new Set(blocks.map((b) => b.step)).size === 1 ? '' : 's') : 'nothing animates yet'}`;
-  if (!s.objects.length && !leaving.length) { box.innerHTML = '<div class="tl-empty">Add something to the slide and its animations show up here, one track per object.</div>'; return; }
-  const maxStep = Math.max(1, ...blocks.map((b) => b.step));
+  const nClicks = new Set([...blocks.map((b) => b.step), ...Object.keys(s.voice || {}).filter((k) => s.voice[k]).map(Number)]).size;
+  $('#tlSub').textContent = `Slide ${cur + 1} · ${nClicks ? nClicks + ' click' + (nClicks === 1 ? '' : 's') : 'nothing animates yet'}`;
+  const voice = s.voice || {};
+  if (!s.objects.length && !leaving.length && !Object.keys(voice).length) { box.innerHTML = '<div class="tl-empty">Add something to the slide and its animations show up here, one track per object.</div>'; return; }
+  const maxStep = Math.max(1, ...blocks.map((b) => b.step), ...Object.keys(voice).filter((k) => voice[k]).map(Number));
   const cols = maxStep + 1;
   let h = `<div class="tl-grid" style="grid-template-columns: 170px repeat(${cols}, minmax(128px, 1fr))">`;
   h += `<div class="tl-corner">Object</div>`;
@@ -1130,6 +1161,16 @@ function renderTimeline() {
     h += k <= maxStep
       ? `<div class="tl-step" data-step="${k}">Click ${k}<button data-playstep="${k}" title="Play click ${k}" aria-label="Play click ${k}">${icon('play')}</button></div>`
       : `<div class="tl-step new" data-step="${k}">New click</div>`;
+  }
+  // Narration: one clip per click.
+  h += `<div class="tl-name tl-voice" title="Narration recorded for each click">${icon('mic')}<span>Narration</span></div>`;
+  for (let k = 1; k <= cols; k++) {
+    const a = voice[k] && project.assets?.[voice[k]];
+    const live = recording && recording.slide === s.id && recording.step === k;
+    h += `<div class="tl-cell tl-voice" data-step="${k}">` + (live
+      ? `<button class="tl-rec live" data-recstop title="Stop recording"><i class="lvl"></i>${icon('square')}<span>0.0 s</span></button>`
+      : a ? `<span class="vblk" data-voice="${k}" title="Narration for click ${k}: click for options"><i style="width:${Math.min(100, 12 + a.dur * 8)}%"></i>${icon('volume-2')}${fmtDur(a.dur)}</span>`
+        : `<button class="tl-rec" data-rec="${k}" title="Record narration for ${k <= maxStep ? 'click ' + k : 'a new click'}" aria-label="Record narration for click ${k}">${icon('mic')}<span>Record</span></button>`) + '</div>';
   }
   const row = (o, gone, inGroup) => {
     const selC = !gone && isSel(o.id) ? ' tl-row-sel' : '';
@@ -1216,7 +1257,8 @@ function openGroupMenu(gid, rect, rename = false) {
 // Renumber clicks so they run 1, 2, 3… with no empty columns.
 function compactSteps() {
   const s = slide();
-  const used = [...new Set(slideBlocks().map((b) => b.step))].sort((a, b) => a - b);
+  const vk = Object.keys(s.voice || {}).filter((k) => s.voice[k]).map(Number);
+  const used = [...new Set([...slideBlocks().map((b) => b.step), ...vk])].sort((a, b) => a - b);
   const map = new Map(used.map((k, i) => [k, i + 1]));
   const m = (k) => map.get(Math.round(k)) ?? k;
   for (const o of s.objects) {
@@ -1225,6 +1267,7 @@ function compactSteps() {
     if (Array.isArray(o.emphs)) o.emphs.forEach((e) => (e.step = m(e.step)));
   }
   if (s.outSteps) for (const id in s.outSteps) s.outSteps[id] = m(s.outSteps[id]);
+  if (s.voice) s.voice = Object.fromEntries(vk.map((k) => [m(k), s.voice[k]]));
 }
 
 function moveBlock(b, k) {
@@ -1250,6 +1293,84 @@ function setBlockStep(b, k) {
 
 const blockOf = (el) => el.dataset.kind === 'group' ? { kind: 'group', id: el.dataset.id, step: +el.dataset.i }
   : slideBlocks().find((b) => b.kind === el.dataset.kind && b.id === el.dataset.id && String(b.i ?? '') === el.dataset.i);
+
+// ---- narration ---------------------------------------------------------------------
+// One clip per click, recorded here in the timeline or in one take while presenting.
+let recording = null; // { slide, step, rec, timer } while a timeline clip records
+function addClip(s, step, asset) {
+  const id = uid();
+  assetPool[id] = asset;
+  project.assets = { ...(project.assets || {}), [id]: asset };
+  (s.voice ||= {})[step] = id;
+}
+async function recordClip(k) {
+  if (recording) await stopClipRecording();
+  let rec;
+  try { rec = await startRecording(); } catch (err) { return toast(err.message); }
+  recording = { slide: slide().id, step: k, rec };
+  renderTimeline();
+  recording.timer = setInterval(() => {
+    const b = $('#timeline [data-recstop]');
+    if (!b) return;
+    b.querySelector('span').textContent = ((performance.now() - rec.started) / 1000).toFixed(1) + ' s';
+    b.querySelector('.lvl').style.transform = `scaleY(${0.15 + 0.85 * rec.level()})`;
+  }, 80);
+}
+async function stopClipRecording() {
+  const r = recording;
+  if (!r) return;
+  recording = null;
+  clearInterval(r.timer);
+  try {
+    const asset = await r.rec.stop();
+    const s = project.slides.find((x) => x.id === r.slide);
+    if (s && asset.dur > 0.05) edit(() => { addClip(s, r.step, asset); if (s === slide()) compactSteps(); });
+    toast(`Recorded ${fmtDur(asset.dur)} of narration for click ${r.step}`);
+  } catch (err) { toast('The recording could not be saved: ' + err.message); }
+  releaseMic();
+  renderTimeline(); renderSlides();
+}
+function openVoiceMenu(k, rect) {
+  const s = slide(), a = project.assets?.[s.voice?.[k]];
+  if (!a) return;
+  const m = $('#tlMenu');
+  m.innerHTML = `<div class="mh">Narration · click ${k} · ${fmtDur(a.dur)}</div><button data-v="play">${icon('play')}Play</button><button data-v="again">${icon('mic')}Record again</button><button data-v="del">${icon('trash-2')}Remove narration</button>`;
+  showMenu(rect);
+  m.onclick = (e) => {
+    const v = e.target.closest('[data-v]')?.dataset.v;
+    if (!v) return;
+    m.hidden = true;
+    if (v === 'play') playClip(a);
+    if (v === 'again') recordClip(k);
+    if (v === 'del') { stopClip(); edit(() => { delete s.voice[k]; compactSteps(); }); renderTimeline(); renderSlides(); }
+  };
+}
+// Record a whole voiceover: present from this slide and talk; every click starts the next clip.
+async function startTake() {
+  try { (await startRecording()).cancel(); } catch (err) { return toast(err.message); }
+  const clips = [], pending = [];
+  let rec = null, beat = null;
+  presenter.take = {
+    async cut(next) {
+      if (rec) { const r = rec, b = beat; pending.push(r.stop().then((a) => clips.push({ b, a })).catch(() => {})); }
+      beat = next; rec = null;
+      try { rec = await startRecording(); } catch (err) { toast(err.message); presenter.take = null; $('#presentRec').hidden = true; }
+    },
+    async finish() {
+      presenter.take = null;
+      if (rec) { const r = rec, b = beat; pending.push(r.stop().then((a) => clips.push({ b, a })).catch(() => {})); }
+      await Promise.all(pending);
+      releaseMic();
+      const keep = clips.filter((c) => c.a.dur > 0.3);
+      if (!keep.length) return toast('Nothing was recorded');
+      edit(() => keep.forEach(({ b, a }) => addClip(project.slides[b.slide], b.step, a)));
+      renderAll();
+      toast(`Recorded narration for ${keep.length} click${keep.length === 1 ? '' : 's'}. It plays when presenting and goes into the video.`);
+    },
+  };
+  presenter.open(cur);
+}
+$('#tlTake').addEventListener('click', startTake);
 
 let tlDrag = null;
 $('#timeline').addEventListener('pointerdown', (e) => {
@@ -1289,6 +1410,11 @@ $('#timeline').addEventListener('pointerup', endTlDrag);
 $('#timeline').addEventListener('pointercancel', () => { if (tlDrag) { tlDrag.ghost?.remove(); tlDrag.el.classList.remove('lifting'); tlDrag = null; } });
 
 $('#timeline').addEventListener('click', (e) => {
+  const rb = e.target.closest('[data-rec]');
+  if (rb) return recordClip(+rb.dataset.rec);
+  if (e.target.closest('[data-recstop]')) return stopClipRecording();
+  const vb = e.target.closest('[data-voice]');
+  if (vb) return openVoiceMenu(+vb.dataset.voice, vb.getBoundingClientRect());
   const play = e.target.closest('[data-playstep]');
   if (play) return playStep(+play.dataset.playstep);
   const add = e.target.closest('[data-addemph]');
@@ -1386,7 +1512,9 @@ async function playStep(k) {
   if (!beat) return;
   const state = stateBefore(beat);
   $('#objLayer').style.opacity = 0; $('#ghostLayer').style.opacity = 0; $('#overlay').style.display = 'none';
+  const v = playClip(project.assets?.[beat.voice]);
   await player.play(state, beat);
+  await v;
   await sleep(500);
   $('#objLayer').style.opacity = ''; $('#ghostLayer').style.opacity = ''; $('#overlay').style.display = '';
   renderStage();
@@ -1589,6 +1717,8 @@ function renderAll() {
 setGrid({});
 renderPalette();
 renderAll();
+// Drop stored images and clips this lesson no longer uses.
+setTimeout(() => pruneAssets(new Set(Object.keys(project.assets || {}))), 3000);
 // KaTeX loads deferred; redraw once it is there so math renders properly.
 window.addEventListener('load', () => { if (window.katex) { renderAll(); renderPalette(); } });
 

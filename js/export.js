@@ -2,7 +2,7 @@
 // same primitives the editor draws, so the render matches the preview.
 import { REG, exprToPy } from './components.js';
 import { labelPos, timeline, LABEL_SIZE, fontOf, fonts, DEFAULT_FONT } from './render.js';
-import { bgOf, bgKey, isPlain, bgPy, BG_HELPERS, usedAssets, assetFile } from './backgrounds.js';
+import { bgOf, bgKey, isPlain, bgPy, BG_HELPERS, usedAssets, mediaFile } from './backgrounds.js';
 
 const n = (v) => {
   const r = Math.round(v * 10000) / 10000;
@@ -120,6 +120,25 @@ const EMPH = {
   Flash: (m) => `Flash(${m}, color=YELLOW)`, FlowCurrent: (m) => `_flow(${m})`,
 };
 
+const VOICE_HELPERS = `
+# --- narration ---------------------------------------------------------------
+from pathlib import Path as _VPath
+_VHERE = _VPath(__file__).parent if "__file__" in globals() else _VPath(".")
+
+
+def _say(scene, name):
+    """Start a narration clip now; returns the time it started."""
+    scene.add_sound(str(_VHERE / name))
+    return scene.renderer.time
+
+
+def _hold(scene, t0, dur):
+    """Wait until a clip that started at t0 has finished."""
+    left = t0 + dur - scene.renderer.time
+    if left > 1 / config.frame_rate:
+        scene.wait(left)
+`;
+
 export function exportPython(project, { mode = 'slides' } = {}) {
   fonts.lesson = project.font || DEFAULT_FONT;
   const cls = ident(project.title);
@@ -138,8 +157,10 @@ export function exportPython(project, { mode = 'slides' } = {}) {
     L.push(`    manim -qh lesson.py ${cls}`);
   }
   if (project.slides.some((s) => s.objects.some((o) => o.type === 'math'))) L.push('\nMath objects use MathTex and need a LaTeX installation.');
-  const images = usedAssets(project).map((id) => assetFile(id, project.assets[id]));
-  if (images.length) L.push(`\nPut these background images next to this file: ${images.join(', ')}`);
+  const media = usedAssets(project).map((id) => mediaFile(id, project.assets[id]));
+  if (media.length) L.push(`\nPut these files next to this file (Download media in Manim Visual): ${media.join(', ')}`);
+  const voiced = beats.some((b) => b.voice && project.assets?.[b.voice]);
+  if (voiced) L.push('Narration uses self.add_sound; rendering it on a computer needs ffmpeg.');
   // Backgrounds: a plain colour shared by every slide is just the camera colour. Anything
   // else is a full-frame Group behind everything, cross-faded when a slide changes it.
   const bgs = project.slides.map((s) => bgOf(project, s));
@@ -150,6 +171,7 @@ export function exportPython(project, { mode = 'slides' } = {}) {
   if (mode === 'slides') L.push('from manim_slides import Slide');
   L.push(HELPERS);
   if (fancy) L.push(BG_HELPERS);
+  if (voiced) L.push(VOICE_HELPERS);
   L.push('');
   L.push(`class ${cls}(${mode === 'slides' ? 'Slide' : 'Scene'}):`);
   w('def construct(self):', 1);
@@ -181,6 +203,8 @@ export function exportPython(project, { mode = 'slides' } = {}) {
       w(`self.remove(${bgVar})`);
       bgVar = v; bgAt = keys[beat.slide];
     }
+    const clip = beat.voice && project.assets?.[beat.voice];
+    if (clip) w(`_v = _say(self, ${str(mediaFile(beat.voice, clip))})`);
     for (const phase of beat.phases) {
       const anims = [], after = [], adds = [];
       for (const a of phase) {
@@ -204,6 +228,7 @@ export function exportPython(project, { mode = 'slides' } = {}) {
       if (anims.length) w(`self.play(${anims.join(', ')})`);
       after.forEach((s) => w(s));
     }
+    if (clip) w(`_hold(self, _v, ${n(clip.dur)})`);
   });
   w('');
   w('self.next_slide()' + (mode === 'slides' ? '' : ''));

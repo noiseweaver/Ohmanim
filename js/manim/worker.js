@@ -1,11 +1,12 @@
 // Web Worker that runs real Manim (Community Edition) inside Pyodide, paints
 // each frame on an OffscreenCanvas and encodes an MP4 with WebCodecs.
 //
-// Messages in:  {type:'init'}  {type:'render', code, width, height, fps, tex, assets:[{name, type, bytes}]}
+// Messages in:  {type:'init'}  {type:'render', code, width, height, fps, tex, assets:[{name, type, bytes}],
+//               audio:{name: Float32Array mono PCM at 48 kHz}}
 // Messages out: {type:'status', text}  {type:'ready'}  {type:'preview', bitmap, frame, time}
 //               {type:'missingTex', keys}  {type:'done', mp4, mime, markers, duration, frames, scene}
 //               {type:'error', message}
-import { FrameEncoder } from './encode.js';
+import { FrameEncoder, AUDIO_RATE } from './encode.js';
 
 export const PYODIDE_VERSION = '0.29.5';
 const PYODIDE_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
@@ -56,9 +57,10 @@ manimweb.install()
   post({ type: 'ready' });
 }
 
-async function render({ code, width, height, fps, tex, assets = [] }) {
+async function render({ code, width, height, fps, tex, assets = [], audio = {} }) {
   if (!pyodide) await (booting ||= boot());
-  const enc = await new FrameEncoder(width, height, fps).init();
+  const enc = await new FrameEncoder(width, height, fps).init({ withAudio: Object.keys(audio).length > 0 });
+  const sounds = []; // [{name, time}]
   // Image files (backgrounds) go next to the scene for Manim, and stay here as bitmaps to draw.
   const names = [];
   for (const a of assets) {
@@ -79,6 +81,8 @@ async function render({ code, width, height, fps, tex, assets = [] }) {
       }
     } else if (kind === 'slide') {
       enc.marker(String(payload || ''));
+    } else if (kind === 'sound') {
+      sounds.push({ name: String(payload), time: +n });
     }
   };
 
@@ -112,8 +116,18 @@ _res
     post({ type: 'missingTex', keys: result.missing });
     return;
   }
-  const out = await enc.finish();
-  post({ type: 'done', ...out, mime: 'video/mp4', scene: result.scene, codec: enc.codec }, [out.mp4]);
+  // Mix every narration clip in at the time the scene started it.
+  let pcm = null;
+  const heard = sounds.filter((s) => audio[s.name]);
+  if (heard.length && enc.audio) {
+    pcm = new Float32Array(Math.ceil((enc.frameNo / fps) * AUDIO_RATE));
+    for (const s of heard) {
+      const clip = audio[s.name], at = Math.round(s.time * AUDIO_RATE);
+      for (let i = 0; i < clip.length && at + i < pcm.length; i++) pcm[at + i] += clip[i];
+    }
+  } else if (heard.length) status('This browser cannot encode audio, so the video has no narration.');
+  const out = await enc.finish(pcm);
+  post({ type: 'done', ...out, mime: 'video/mp4', scene: result.scene, codec: enc.codec, audio: !!pcm }, [out.mp4]);
 }
 
 // Copy the TTFs a scene names (plus DejaVu Sans, the default and fallback) into Python's filesystem.

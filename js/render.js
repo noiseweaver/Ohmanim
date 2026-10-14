@@ -237,6 +237,9 @@ export function timeline(project) {
       const a = { kind: 'fadeout', id: p.id, obj: p };
       outSteps[p.id] ? at(stepOf(outSteps[p.id])).trans.push(a) : firstTrans.push(a);
     }
+    // A click with narration is a beat even when nothing animates on it.
+    const voice = slide.voice || {};
+    for (const k in voice) if (voice[k]) at(stepOf(+k));
     const keys = [...steps.keys()].sort((a, b) => a - b);
     if (!keys.length) keys.push(1), at(1);
     keys.forEach((k, i) => {
@@ -246,7 +249,7 @@ export function timeline(project) {
       if (trans.length) phases.push(trans);
       if (s.enter.length) phases.push(s.enter);
       if (s.emph.length) phases.push(s.emph);
-      beats.push({ slide: si, step: k, first: i === 0, phases });
+      beats.push({ slide: si, step: k, first: i === 0, phases, voice: voice[k] || null });
     });
   });
   return beats;

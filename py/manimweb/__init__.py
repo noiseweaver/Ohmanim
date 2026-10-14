@@ -137,8 +137,11 @@ class WebFileWriter:
         if not MISSING:
             WebFileWriter.sink("section", name, 0, "")
 
-    def add_sound(self, *a, **k):
-        pass
+    def add_sound(self, sound_file, time=0, gain=None, **k):
+        # The host mixes the audio; it only needs which file starts when.
+        if not MISSING:
+            import os
+            WebFileWriter.sink("sound", os.path.basename(str(sound_file)), float(time), "")
 
     def add_audio_segment(self, *a, **k):
         pass
@@ -172,7 +175,8 @@ def render(code, scene_name=None, sink=None, width=1280, height=720, fps=30, tex
     """Execute `code`, render `scene_name` (or the last Scene subclass) to `sink`.
 
     sink(kind, payload, n, bg): kind is "frame" (payload = float32 op bytes,
-    n = repeat count, bg = background hex), "slide" (payload = notes) or "section".
+    n = repeat count, bg = background hex), "slide" (payload = notes), "sound"
+    (payload = file name, n = start time in seconds) or "section".
     """
     install()
     import types

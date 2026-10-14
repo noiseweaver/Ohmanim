@@ -205,12 +205,15 @@ export function assetBytes(asset) {
   for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
   return u8;
 }
-// Asset ids every background in the lesson uses.
-export function usedAssets(project) {
+// Asset ids the lesson uses: background images and narration clips.
+export function usedAssets(project, kind = null) {
   const ids = new Set();
-  for (const b of [project.background, ...project.slides.map((s) => s.background)]) if (b && b.image && project.assets?.[b.image]) ids.add(b.image);
+  if (kind !== 'audio') for (const b of [project.background, ...project.slides.map((s) => s.background)]) if (b && b.image && project.assets?.[b.image]) ids.add(b.image);
+  if (kind !== 'image') for (const s of project.slides) for (const id of Object.values(s.voice || {})) if (id && project.assets?.[id]) ids.add(id);
   return [...ids];
 }
+// File name an asset gets next to the exported code.
+export const mediaFile = (id, asset) => (asset.kind === 'audio' ? `voice-${id}.wav` : assetFile(id, asset));
 
 // ---- Manim export ---------------------------------------------------------------
 export const BG_HELPERS = `

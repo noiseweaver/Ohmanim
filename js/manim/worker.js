@@ -1,7 +1,7 @@
 // Web Worker that runs real Manim (Community Edition) inside Pyodide, paints
 // each frame on an OffscreenCanvas and encodes an MP4 with WebCodecs.
 //
-// Messages in:  {type:'init'}  {type:'render', code, width, height, fps, tex}
+// Messages in:  {type:'init'}  {type:'render', code, width, height, fps, tex, assets:[{name, type, bytes}]}
 // Messages out: {type:'status', text}  {type:'ready'}  {type:'preview', bitmap, frame, time}
 //               {type:'missingTex', keys}  {type:'done', mp4, mime, markers, duration, frames, scene}
 //               {type:'error', message}
@@ -56,9 +56,16 @@ manimweb.install()
   post({ type: 'ready' });
 }
 
-async function render({ code, width, height, fps, tex }) {
+async function render({ code, width, height, fps, tex, assets = [] }) {
   if (!pyodide) await (booting ||= boot());
   const enc = await new FrameEncoder(width, height, fps).init();
+  // Image files (backgrounds) go next to the scene for Manim, and stay here as bitmaps to draw.
+  const names = [];
+  for (const a of assets) {
+    pyodide.FS.writeFile(pyodide.FS.cwd() + '/' + a.name, new Uint8Array(a.bytes));
+    enc.images.push(await createImageBitmap(new Blob([a.bytes], { type: a.type })));
+    names.push(a.name);
+  }
   let lastPreview = 0;
   const sink = (kind, payload, n, bg) => {
     if (kind === 'frame') {
@@ -85,13 +92,14 @@ async function render({ code, width, height, fps, tex }) {
   pyodide.globals.set('_mv_code', code);
   pyodide.globals.set('_mv_tex', pyodide.toPy(tex || {}));
   pyodide.globals.set('_mv_size', pyodide.toPy([width, height, fps]));
+  pyodide.globals.set('_mv_images', pyodide.toPy(names));
   let result;
   try {
     const r = await pyodide.runPythonAsync(`
 from pyodide.ffi import to_js
 def _wrap(kind, payload, n, bg):
     _mv_sink(kind, to_js(memoryview(payload)) if kind == "frame" else payload, n, bg)
-_res = manimweb.render(_mv_code, sink=_wrap, width=_mv_size[0], height=_mv_size[1], fps=_mv_size[2], tex=dict(_mv_tex))
+_res = manimweb.render(_mv_code, sink=_wrap, width=_mv_size[0], height=_mv_size[1], fps=_mv_size[2], tex=dict(_mv_tex), images=list(_mv_images))
 _res
 `);
     result = r.toJs({ dict_converter: Object.fromEntries });

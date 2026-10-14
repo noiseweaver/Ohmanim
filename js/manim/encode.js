@@ -18,7 +18,7 @@ async function pickCodec(width, height, fps) {
 
 export class FrameEncoder {
   constructor(width, height, fps) {
-    Object.assign(this, { width, height, fps, frameNo: 0, lastKey: -1e9, forceKey: true, markers: [], error: null });
+    Object.assign(this, { width, height, fps, frameNo: 0, lastKey: -1e9, forceKey: true, markers: [], error: null, images: [] });
     this.canvas = new OffscreenCanvas(width, height);
     this.ctx = this.canvas.getContext('2d');
   }
@@ -33,7 +33,7 @@ export class FrameEncoder {
     return this;
   }
   addFrame(ops, n, bg) {
-    drawOps(this.ctx, ops, this.width, this.height, bg);
+    drawOps(this.ctx, ops, this.width, this.height, bg, this.images);
     const us = 1e6 / this.fps;
     const vf = new VideoFrame(this.canvas, { timestamp: Math.round(this.frameNo * us), duration: Math.round(n * us) });
     const key = this.forceKey || this.frameNo - this.lastKey >= this.fps * 2;

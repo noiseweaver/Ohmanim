@@ -10,6 +10,7 @@ from array import array
 _installed = False
 TEX_SVG = {}  # "environment|expression" -> SVG markup, rendered by MathJax in the host
 MISSING = []  # LaTeX the host still has to render; the scene is re-run once they arrive
+IMAGES = []  # image file names the host can draw, in the order it holds their bitmaps
 _PLACEHOLDER = (
     '<svg xmlns="http://www.w3.org/2000/svg" width="10pt" height="10pt" viewBox="0 0 10 10">'
     '<path d="M0 0H10V10H0Z"/></svg>'
@@ -39,7 +40,7 @@ def _patch():
     from manim.utils import tex_file_writing
     from manim.mobject.text import tex_mobject
 
-    from .cairo_shim import REC
+    from .cairo_shim import REC, IMAGE
 
     def reset(self):
         REC.ops = []
@@ -51,6 +52,24 @@ def _patch():
         reset(self)
         REC.ops = list(background) if isinstance(background, list) else []
 
+    def display_multiple_image_mobjects(self, image_mobjects, pixel_array):
+        # The host draws image files itself; Manim's pixel compositing is skipped. An image's
+        # opacity (set_opacity, FadeIn) lives in its alpha channel, so compare it with the original.
+        for m in image_mobjects:
+            src = getattr(m, "_mv_src", None)
+            if src not in IMAGES:
+                continue
+            alpha = 1.0
+            pa, orig = getattr(m, "pixel_array", None), getattr(m, "orig_alpha_pixel_array", None)
+            if pa is not None and pa.ndim == 3 and pa.shape[2] == 4:
+                top = float(orig.max()) if orig is not None and orig.size else 255.0
+                alpha = min(1.0, float(pa[:, :, 3].max()) / max(top, 1.0))
+            if alpha <= 0:
+                continue
+            ul, ur, dl = m.points[0], m.points[1], m.points[2]
+            REC.ops.extend((IMAGE, IMAGES.index(src), ul[0], ul[1], ur[0], ur[1], dl[0], dl[1], alpha))
+
+    Camera.display_multiple_image_mobjects = display_multiple_image_mobjects
     Camera.reset = reset
     Camera.set_frame_to_background = set_frame_to_background
     # The real get_frame copies the whole pixel buffer; our "frame" is the op list.
@@ -149,7 +168,7 @@ def make_slide_class():
     return Slide
 
 
-def render(code, scene_name=None, sink=None, width=1280, height=720, fps=30, tex=None):
+def render(code, scene_name=None, sink=None, width=1280, height=720, fps=30, tex=None, images=None):
     """Execute `code`, render `scene_name` (or the last Scene subclass) to `sink`.
 
     sink(kind, payload, n, bg): kind is "frame" (payload = float32 op bytes,
@@ -163,6 +182,7 @@ def render(code, scene_name=None, sink=None, width=1280, height=720, fps=30, tex
 
     if tex:
         TEX_SVG.update(tex)
+    IMAGES[:] = list(images or [])
     WebFileWriter.sink = sink or (lambda *a: None)
     MISSING.clear()
     from manim.mobject.svg import svg_mobject

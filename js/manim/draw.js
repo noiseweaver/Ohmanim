@@ -2,7 +2,8 @@
 // Canvas 2D context. Works in windows and workers (OffscreenCanvas).
 export const FRAME_W = 14.222222222222221, FRAME_H = 8;
 
-export function drawOps(ctx, ops, width, height, bg) {
+// images: bitmaps for op 13, in the order of manimweb.IMAGES.
+export function drawOps(ctx, ops, width, height, bg, images = []) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
   ctx.fillStyle = bg || '#000000';
@@ -35,6 +36,17 @@ export function drawOps(ctx, ops, width, height, bg) {
       case 10: ctx.lineJoin = ['miter', 'round', 'bevel'][ops[i++]] || 'round'; break;
       case 11: ctx.lineCap = ['butt', 'round', 'square'][ops[i++]] || 'butt'; break;
       case 12: ctx.lineTo(ops[i], ops[i + 1]); i += 2; break;
+      case 13: {
+        const img = images[ops[i]], [ulx, uly, urx, ury, dlx, dly, a] = [1, 2, 3, 4, 5, 6, 7].map((k) => ops[i + k]);
+        i += 8;
+        if (!img) break;
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.transform((urx - ulx) / img.width, (ury - uly) / img.width, (dlx - ulx) / img.height, (dly - uly) / img.height, ulx, uly);
+        ctx.drawImage(img, 0, 0);
+        ctx.restore();
+        break;
+      }
       default: return; // corrupt stream
     }
   }

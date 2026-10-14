@@ -6,6 +6,7 @@ import { demoProject } from './demo.js';
 import { renderCode, warmUp, onEngine } from './manim/engine.js';
 import { icon, installIcons } from './icons.js';
 import { pop, flash, appear, flip, shake } from './motion.js';
+import { bgOf, bgSVG, bgKey, isLight, BG_DEFAULT, FILLS, PATTERNS, FITS, PRESETS, importImage, usedAssets, assetFile, assetBytes } from './backgrounds.js';
 import { THEMES, STYLES, loadLook, saveLook, applyLook, themeSwatch, TEXT_ROLES, applySlideTheme, applyRole, slideSwatch, slidePalette } from './themes.js';
 
 installIcons();
@@ -58,7 +59,23 @@ const carried = (o) => !!prevSlide()?.objects.some((p) => p.id === o.id);
 
 function load() { try { const p = JSON.parse(localStorage.getItem(STORE)); return p?.slides?.length ? p : null; } catch { return null; } }
 let saveTimer = 0;
-function persist() { clearTimeout(saveTimer); saveTimer = setTimeout(() => { try { localStorage.setItem(STORE, JSON.stringify(project)); } catch {} }, 250); }
+let warnedFull = false;
+function persist() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try { localStorage.setItem(STORE, JSON.stringify(project)); warnedFull = false; }
+    catch { if (!warnedFull) { warnedFull = true; toast('The browser is out of room for this lesson (large images?). Use Save to keep a copy.'); } }
+  }, 250);
+}
+// Background images live in project.assets. Undo snapshots leave them out (they can be
+// large); every image seen this session stays in the pool so undo can bring it back.
+const assetPool = {};
+function attachAssets() {
+  Object.assign(assetPool, project.assets || {});
+  const a = {};
+  for (const id of usedAssets({ ...project, assets: assetPool })) a[id] = assetPool[id];
+  project.assets = a;
+}
 
 // Record an undo point, then apply fn. Edits with the same `coalesce` key
 // within 1.2s share one undo step (typing in a field, dragging a slider).
@@ -73,7 +90,7 @@ function edit(fn, coalesce = null) {
   fn();
   persist();
 }
-function restore(snap) { const s = JSON.parse(snap); project = s.project; cur = Math.min(s.cur, project.slides.length - 1); sel = s.sel; extra = new Set(s.extra || []); renderAll(); persist(); }
+function restore(snap) { const s = JSON.parse(snap); project = s.project; attachAssets(); cur = Math.min(s.cur, project.slides.length - 1); sel = s.sel; extra = new Set(s.extra || []); renderAll(); persist(); }
 function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); restore(undoStack.pop()); lastCoalesce = null; }
 function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); restore(redoStack.pop()); lastCoalesce = null; }
 
@@ -83,17 +100,39 @@ function toast(msg) { const t = $('#toast'); t.textContent = msg; if (t.hidden) 
 const stage = $('#stage');
 const player = new Player($('#playLayer'));
 
+// Editor grid: a guide that is never part of the slides. Lines contrast with the slide.
+const GRID_KEY = 'manimvis.grid.v1';
+let grid = { show: true, spacing: 0.5 };
+try { Object.assign(grid, JSON.parse(localStorage.getItem(GRID_KEY)) || {}); } catch {}
 function drawGrid() {
+  const g = $('#grid');
+  g.style.display = grid.show ? '' : 'none';
+  g.style.color = isLight(bgOf(project, slide())) ? '#000' : '#fff';
   let s = '';
-  for (let x = -7; x <= 7; x += 0.5) s += `<line x1="${x}" y1="-4" x2="${x}" y2="4"${x === 0 ? ' class="axis"' : ''}/>`;
-  for (let y = -4; y <= 4; y += 0.5) s += `<line x1="-7.12" y1="${y}" x2="7.12" y2="${y}"${y === 0 ? ' class="axis"' : ''}/>`;
-  $('#grid').innerHTML = s;
+  const d = grid.spacing, n = (v) => Math.round(v * 1000) / 1000;
+  for (let k = -Math.floor(7.12 / d); k * d <= 7.12; k++) s += `<line x1="${n(k * d)}" y1="-4" x2="${n(k * d)}" y2="4"${k === 0 ? ' class="axis"' : ''}/>`;
+  for (let k = -Math.floor(4 / d); k * d <= 4; k++) s += `<line x1="-7.12" y1="${n(k * d)}" x2="7.12" y2="${n(k * d)}"${k === 0 ? ' class="axis"' : ''}/>`;
+  g.innerHTML = s;
+}
+function setGrid(patch) {
+  Object.assign(grid, patch);
+  try { localStorage.setItem(GRID_KEY, JSON.stringify(grid)); } catch {}
+  drawGrid();
+  $('#gridBtn').classList.toggle('on', grid.show);
+}
+let stageBg = '';
+function drawStageBg() {
+  const b = bgOf(project, slide()), k = bgKey(b);
+  if (k === stageBg) return;
+  stageBg = k;
+  $('#bg').innerHTML = bgSVG(b, project);
+  drawGrid();
 }
 
 function renderStage() {
   player.stop();
   $('#playLayer').innerHTML = '';
-  $('#bg').setAttribute('fill', project.bg || '#000');
+  drawStageBg();
   const ghost = $('#ghost').checked && prevSlide();
   $('#ghostLayer').innerHTML = ghost ? prevSlide().objects.filter((p) => !slide().objects.some((o) => o.id === p.id)).map((o) => objectSVG(o)).join('') : '';
   $('#objLayer').innerHTML = slide().objects.map((o) => `<g data-id="${o.id}"${isSel(o.id) ? ' class="sel"' : ''}>${objectSVG(o, { hit: true })}</g>`).join('');
@@ -136,8 +175,8 @@ function svgPoint(evt) {
   return [p.x, -p.y];
 }
 const snapOn = () => $('#snap').checked;
-const snap = (v) => (snapOn() ? round(v, 0.25) : fx(v));
-const snapshot = () => JSON.stringify({ project, cur, sel, extra: [...extra] });
+const snap = (v) => (snapOn() ? round(v, grid.spacing / 2) : fx(v));
+const snapshot = () => JSON.stringify({ project: { ...project, assets: undefined }, cur, sel, extra: [...extra] });
 
 // Freeform drawing: click to add points, click the first point (or press
 // Enter / double-click) to finish, Esc to cancel.
@@ -533,7 +572,7 @@ $('#libFile').addEventListener('change', async (e) => {
 
 // ---- slides list ---------------------------------------------------------------
 function thumbSVG(s) {
-  return `<svg viewBox="-7.1111 -4 14.2222 8"><rect x="-7.12" y="-4" width="14.23" height="8" fill="${project.bg || '#000'}"/>${s.objects.map((o) => objectSVG(o)).join('')}</svg>`;
+  return `<svg viewBox="-7.1111 -4 14.2222 8">${bgSVG(bgOf(project, s), project)}${s.objects.map((o) => objectSVG(o)).join('')}</svg>`;
 }
 function renderSlides() {
   $('#slideList').innerHTML = project.slides.map((s, i) => `<li data-i="${i}" data-key="${s.id || 'i' + i}"${i === cur ? ' class="on"' : ''}>
@@ -611,7 +650,8 @@ function renderInspector() {
       ${field('Name', 'name', 'text', s.name)}
       ${field('Speaker notes', 'notes', 'textarea', s.notes, { placeholder: 'Shown in presenter mode and exported to manim-slides' })}
       </div>
-      <h4>Lesson</h4><div class="sec" data-scope="project">${field('Background', 'bg', 'color', project.bg || '#000000')}${field('Font', 'font', 'font', project.font || DEFAULT_FONT, { inherit: null })}</div>
+      <button type="button" class="slidetheme" data-slideact="bg"><svg viewBox="-7.1111 -4 14.2222 8" aria-hidden="true">${bgSVG(bgOf(project, s), project)}</svg><span><b>Background</b><br>${s.background ? 'This slide has its own' : 'Lesson background'}</span></button>
+      <h4>Lesson</h4><div class="sec" data-scope="project">${field('Font', 'font', 'font', project.font || DEFAULT_FONT, { inherit: null })}</div>
       <button type="button" class="slidetheme" data-slideact="theme">${slideSwatch(project.slideTheme)}<span><b>Slide theme</b><br>${escapeHTML(project.slideTheme ? THEMES.find((t) => t.id === project.slideTheme)?.name || 'Custom' : 'Your own colours')}</span></button>
       <div class="note">
         <b>How slides animate</b><br>
@@ -682,6 +722,7 @@ $('#inspector').addEventListener('input', (e) => {
 });
 $('#inspector').addEventListener('click', (e) => {
   if (e.target.closest('[data-slideact="theme"]')) { renderSlideThemes(); $('#slideThemeDlg').showModal(); return; }
+  if (e.target.closest('[data-slideact="bg"]')) { openBg(); return; }
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (act) objAction(act);
 });
@@ -817,7 +858,13 @@ const generatedCode = (mode = 'slides') => exportPython(project, { mode });
 // What gets rendered: hand-edited code if there is any, otherwise generated from the slides.
 const currentCode = () => project.customCode || generatedCode('slides');
 
+// Background image files the code loads: [{name, type, bytes}].
+function renderAssets() { return usedAssets(project).map((id) => { const a = project.assets[id]; return { name: assetFile(id, a), type: a.type, bytes: assetBytes(a).buffer }; }); }
+$('#dlAssets').addEventListener('click', () => renderAssets().forEach((a, i) => setTimeout(() => download(new Blob([a.bytes], { type: a.type }), a.name), i * 300)));
 function openCode() {
+  const n = usedAssets(project).length;
+  $('#dlAssets').hidden = !n;
+  $('#dlAssets').querySelector('span').textContent = n > 1 ? `Download ${n} images` : 'Download image';
   $('#code').value = project.customCode || generatedCode(exportMode);
   refreshCodeHelp();
   $('#exportDlg').showModal();
@@ -887,7 +934,7 @@ async function startRender() {
   const [width, height, fps] = $('#quality').value.split('x').map(Number);
   const t0 = performance.now();
   try {
-    const res = await renderCode(renderCodeText, { width, height, fps }, (m) => {
+    const res = await renderCode(renderCodeText, { width, height, fps, assets: renderAssets() }, (m) => {
       if (m.type === 'status') $('#renderStatus').textContent = m.text;
       if (m.type === 'preview') {
         previewCtx.drawImage(m.bitmap, 0, 0, 1280, 720); m.bitmap.close();
@@ -947,7 +994,7 @@ const presenter = {
     this.state = new Map();
     for (let k = 0; k < start; k++) this.state = applyBeat(this.state, this.beats[k]);
     this.i = start - 1;
-    $('#presentBg').setAttribute('fill', project.bg || '#000');
+    this.bgAt = null; this.setBg(this.beats[Math.max(0, start)]?.slide ?? 0, false);
     $('#presentLayer').innerHTML = stateSVG(this.state);
     this.next();
   },
@@ -972,6 +1019,17 @@ const presenter = {
     };
     this.raf = requestAnimationFrame(tick);
   },
+  // Show slide i's background, cross-fading when it changes.
+  setBg(i, fade = true) {
+    const b = bgOf(project, project.slides[i]), k = bgKey(b);
+    if (k === this.bgAt) return;
+    const el = $('#presentBg'), had = this.bgAt !== null;
+    this.bgAt = k;
+    if (!fade || !had || !el.animate || matchMedia('(prefers-reduced-motion: reduce)').matches) { el.innerHTML = bgSVG(b, project); return; }
+    el.insertAdjacentHTML('beforeend', `<g>${bgSVG(b, project)}</g>`);
+    const top = el.lastElementChild;
+    top.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 800, easing: 'ease-in-out' }).onfinish = () => { if (top.isConnected && this.bgAt === k) el.innerHTML = bgSVG(b, project); };
+  },
   async next() {
     if (this.mode === 'video') {
       if (this.busy) { cancelAnimationFrame(this.raf); video.pause(); video.currentTime = this.markers[this.i].time - 0.001; this.busy = false; return; }
@@ -985,6 +1043,7 @@ const presenter = {
     this.i++;
     this.busy = true;
     this.pos();
+    this.setBg(this.beats[this.i].slide);
     const target = applyBeat(this.state, this.beats[this.i]);
     const res = await this.player.play(this.state, this.beats[this.i]);
     this.state = target;
@@ -1003,6 +1062,7 @@ const presenter = {
     this.state = new Map();
     for (let k = 0; k <= this.i; k++) this.state = applyBeat(this.state, this.beats[k]);
     $('#presentLayer').innerHTML = stateSVG(this.state);
+    this.setBg(this.beats[this.i].slide, false);
     this.pos();
   },
   pos() {
@@ -1367,7 +1427,7 @@ document.addEventListener('keydown', (e) => {
     else if (e.key.toLowerCase() === 'n') $('#presentNotes').hidden = !$('#presentNotes').hidden;
     return;
   }
-  if ($('#exportDlg').open || $('#renderDlg').open || $('#shapeDlg').open || $('#lookDlg').open) return;
+  if ($('#exportDlg').open || $('#renderDlg').open || $('#shapeDlg').open || $('#lookDlg').open || $('#bgDlg').open) return;
   if (e.key === 'Escape' && (openCat || !$('#tlMenu').hidden)) { openShelf(null); $('#tlMenu').hidden = true; return; }
   const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName);
   const mod = e.ctrlKey || e.metaKey;
@@ -1396,13 +1456,137 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// ---- backgrounds -------------------------------------------------------------------
+// The dialog edits the lesson background, or this slide's own one. The lesson's colour is
+// project.bg (slide themes set it); everything else is project.background.
+const bgScope = () => (slide().background ? 'slide' : 'lesson');
+const bgEffective = () => bgOf(project, slide());
+function bgSet(patch, coalesce) {
+  edit(() => {
+    if (bgScope() === 'slide') Object.assign(slide().background, patch);
+    else {
+      const { color, ...rest } = patch;
+      if (color) project.bg = color;
+      project.background = { ...(project.background || {}), ...rest };
+    }
+  }, coalesce);
+  renderBg();
+}
+function openBg() { renderBg(); $('#bgDlg').showModal(); }
+const opt = (list, v) => list.map(([k, n]) => `<option value="${k}"${k === v ? ' selected' : ''}>${n}</option>`).join('');
+function bgRange(label, key, v, min, max, step, unit = '') {
+  return `<label>${label}<span class="rng"><input type="range" data-bk="${key}" min="${min}" max="${max}" step="${step}" value="${v}"><output>${+(+v).toFixed(2)}${unit}</output></span></label>`;
+}
+function renderBg() {
+  const b = bgEffective(), scope = bgScope();
+  document.querySelectorAll('[data-bgscope]').forEach((x) => { x.classList.toggle('on', x.dataset.bgscope === scope); x.setAttribute('aria-checked', x.dataset.bgscope === scope); });
+  $('#bgScopeHelp').textContent = scope === 'slide' ? `Only slide ${cur + 1}. The other slides keep the lesson background.` : 'Every slide that has no background of its own.';
+  $('#bgPreview').innerHTML = bgSVG(b, project) + slide().objects.map((o) => objectSVG(o)).join('');
+  $('#bgPresets').innerHTML = PRESETS.map((p) => {
+    const pb = { ...b, ...(p.kind === 'look' ? { pcolor: null } : {}), ...p.bg };
+    return `<button type="button" data-preset="${p.id}" title="${p.kind === 'look' ? 'Sets colours too' : 'Keeps your colours'}"><svg viewBox="-7.1111 -4 14.2222 8" aria-hidden="true">${bgSVG(pb, project)}</svg><span>${p.name}</span></button>`;
+  }).join('');
+  const asset = b.image && project.assets?.[b.image];
+  let h = `<section><h3 class="mh">Fill</h3>
+    <div class="seg" role="radiogroup">${FILLS.map(([k, n]) => `<button type="button" data-bfill="${k}" class="${b.fill === k ? 'on' : ''}">${n.replace(' gradient', '')}</button>`).join('')}</div>
+    <div class="pair"><label>${b.fill === 'radial' ? 'Centre' : b.fill === 'linear' ? 'From' : 'Colour'}<input type="color" data-bk="color" value="${b.color}"></label>
+    ${b.fill !== 'solid' ? `<label>${b.fill === 'radial' ? 'Edge' : 'To'}<input type="color" data-bk="color2" value="${b.color2}"></label>` : ''}</div>
+    ${b.fill === 'linear' ? bgRange('Direction', 'angle', b.angle, 0, 360, 15, '°') : ''}</section>`;
+  h += `<section><h3 class="mh">Pattern</h3>
+    <label>Pattern<select data-bk="pattern">${opt(PATTERNS, b.pattern)}</select></label>`;
+  if (b.pattern !== 'none') h += `${bgRange('Spacing', 'pspacing', b.pspacing, 0.25, 2, 0.25)}${bgRange('Strength', 'popacity', b.popacity, 0.02, 1, 0.02)}${bgRange('Line width', 'pweight', b.pweight, 0.5, 4, 0.5)}
+    <label>Colour<span class="rng"><input type="checkbox" data-bk="pauto"${b.pcolor ? '' : ' checked'}> Automatic<input type="color" data-bk="pcolor" value="${b.pcolor || (isLight(b) ? '#000000' : '#ffffff')}"${b.pcolor ? '' : ' disabled'}></span></label>`;
+  h += `</section><section><h3 class="mh">Image</h3>
+    <div class="btnrow"><button type="button" data-bgact="image">${icon('image')}${asset ? 'Replace image' : 'Add image'}</button>${asset ? `<button type="button" data-bgact="noimage">${icon('trash-2')}Remove</button>` : ''}</div>`;
+  if (asset) h += `<div class="help">${escapeHTML(asset.name)} · ${asset.w}×${asset.h}</div><label>Fit<select data-bk="fit">${opt(FITS, b.fit)}</select></label>
+    ${b.fit === 'tile' ? bgRange('Tile width', 'iscale', b.iscale, 0.5, 8, 0.25) : ''}${bgRange('Opacity', 'iopacity', b.iopacity, 0, 1, 0.05)}${bgRange('Darken', 'dim', b.dim, 0, 0.9, 0.05)}`;
+  h += `</section><section><h3 class="mh">Finish</h3>${bgRange('Vignette', 'vignette', b.vignette, 0, 0.9, 0.05)}</section>`;
+  $('#bgForm').innerHTML = h;
+  stageBg = ''; drawStageBg(); renderSlides();
+}
+$('#bgDlg').addEventListener('input', (e) => {
+  const k = e.target.dataset.bk;
+  if (!k) return;
+  if (k === 'pauto') return bgSet({ pcolor: e.target.checked ? null : $('[data-bk="pcolor"]').value });
+  const v = e.target.type === 'range' ? +e.target.value : e.target.value;
+  if (e.target.type === 'range' || e.target.type === 'color') {
+    // Sliders and colour pickers update the picture without rebuilding the form under the pointer.
+    if (e.target.type === 'range') e.target.nextElementSibling.textContent = +v.toFixed(2) + (k === 'angle' ? '°' : '');
+    edit(() => {
+      if (bgScope() === 'slide') slide().background[k] = v;
+      else if (k === 'color') project.bg = v;
+      else project.background = { ...(project.background || {}), [k]: v };
+    }, 'bg' + k);
+    $('#bgPreview').innerHTML = bgSVG(bgEffective(), project) + slide().objects.map((o) => objectSVG(o)).join('');
+    stageBg = ''; drawStageBg();
+    return;
+  }
+  bgSet({ [k]: v });
+});
+$('#bgDlg').addEventListener('change', (e) => { if (e.target.type === 'range' || e.target.type === 'color') renderBg(); });
+$('#bgDlg').addEventListener('click', (e) => {
+  const sc = e.target.closest('[data-bgscope]');
+  if (sc) {
+    if (sc.dataset.bgscope === bgScope()) return;
+    edit(() => { if (sc.dataset.bgscope === 'slide') slide().background = { ...bgEffective() }; else delete slide().background; });
+    renderBg(); renderInspector();
+    return;
+  }
+  const f = e.target.closest('[data-bfill]');
+  if (f) return bgSet({ fill: f.dataset.bfill });
+  const pr = e.target.closest('[data-preset]');
+  if (pr) {
+    const p = PRESETS.find((x) => x.id === pr.dataset.preset);
+    bgSet({ ...(p.kind === 'look' ? { pcolor: null } : {}), ...p.bg });
+    flash(pr);
+    return;
+  }
+  const a = e.target.closest('[data-bgact]')?.dataset.bgact;
+  if (a === 'image') $('#bgFile').click();
+  if (a === 'noimage') bgSet({ image: null });
+});
+$('#bgFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const asset = await importImage(file);
+    const id = uid();
+    assetPool[id] = asset;
+    edit(() => { project.assets = { ...(project.assets || {}), [id]: asset }; });
+    bgSet({ image: id, fit: bgEffective().image ? bgEffective().fit : 'cover' });
+  } catch (err) { toast(err.message); }
+});
+$('#bgDlg').addEventListener('close', () => { renderInspector(); renderSlides(); });
+
+// Grid menu in the dock.
+$('#gridBtn').addEventListener('click', () => {
+  const m = $('#tlMenu');
+  const sp = [[0.25, '¼'], [0.5, '½'], [1, '1']];
+  m.innerHTML = `<div class="mh">Editor grid</div>
+    <button data-g="show">${icon(grid.show ? 'check' : 'x')}${grid.show ? 'Grid shown' : 'Grid hidden'}</button>
+    <button data-g="snap">${icon(snapOn() ? 'check' : 'x')}${snapOn() ? 'Snapping on' : 'Snapping off'}</button>
+    <div class="mh">Spacing (units)</div><div class="seg">${sp.map(([v, n]) => `<button data-gs="${v}" class="${grid.spacing === v ? 'on' : ''}">${n}</button>`).join('')}</div>
+    <div class="help">Objects snap to half a grid square. The grid only shows while editing; slide patterns are in Background.</div>`;
+  showMenu($('#gridBtn').getBoundingClientRect());
+  m.onclick = (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.g === 'show') setGrid({ show: !grid.show });
+    if (b.dataset.g === 'snap') $('#snapBtn').click();
+    if (b.dataset.gs) setGrid({ spacing: +b.dataset.gs });
+    $('#gridBtn').click();
+  };
+});
+
 // ---- boot --------------------------------------------------------------------------
 function renderAll() {
+  attachAssets();
   fonts.lesson = project.font || DEFAULT_FONT;
   $('#title').value = project.title || '';
   renderSlides(); renderStage(); renderInspector(); renderTimeline();
 }
-drawGrid();
+setGrid({});
 renderPalette();
 renderAll();
 // KaTeX loads deferred; redraw once it is there so math renders properly.

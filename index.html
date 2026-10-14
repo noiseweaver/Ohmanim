@@ -47,7 +47,7 @@
     <section class="center">
       <div class="stagebox">
         <svg id="stage" viewBox="-7.1111 -4 14.2222 8" preserveAspectRatio="xMidYMid meet" aria-label="Slide canvas">
-          <rect id="bg" x="-7.1111" y="-4" width="14.2222" height="8"/>
+          <g id="bg" pointer-events="none"></g>
           <g id="grid" pointer-events="none"></g>
           <g id="ghostLayer" opacity="0.18" pointer-events="none"></g>
           <g id="objLayer"></g>
@@ -67,6 +67,7 @@
         <div id="catBar" class="cats"></div>
         <button id="searchBtn" class="icon" title="Search shapes" aria-label="Search shapes"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg></button>
         <span class="grow"></span>
+        <button id="gridBtn" class="icon" title="Grid and snapping" aria-label="Grid and snapping" aria-haspopup="menu"><svg class="ic" aria-hidden="true"><use href="#i-grid-3x3"/></svg></button>
         <button id="snapBtn" class="icon toggle on" title="Snap to grid" aria-label="Snap to grid" aria-pressed="true"><svg class="ic" aria-hidden="true"><use href="#i-magnet"/></svg></button>
         <button id="ghostBtn" class="icon toggle on" title="Show what fades out from the previous slide" aria-label="Show previous slide" aria-pressed="true"><svg class="ic" aria-hidden="true"><use href="#i-layers"/></svg></button>
         <button data-cmd="play" title="Play this slide's animations"><svg class="ic" aria-hidden="true"><use href="#i-play"/></svg><span>Play slide</span></button>
@@ -106,7 +107,7 @@
 
   <div id="present" class="present" hidden>
     <svg id="presentSvg" viewBox="-7.1111 -4 14.2222 8" preserveAspectRatio="xMidYMid meet">
-      <rect id="presentBg" x="-7.1111" y="-4" width="14.2222" height="8"/>
+      <g id="presentBg"></g>
       <g id="presentLayer"></g>
     </svg>
     <div class="present-ui">
@@ -135,6 +136,7 @@
       <textarea id="code" spellcheck="false"></textarea>
       <div class="row wrap">
         <button type="button" id="copyCode"><svg class="ic" aria-hidden="true"><use href="#i-clipboard-copy"/></svg><span>Copy</span></button>
+        <button type="button" id="dlAssets" hidden title="The background images this code loads; keep them next to lesson.py"><svg class="ic" aria-hidden="true"><use href="#i-download"/></svg><span>Download images</span></button>
         <button type="button" id="dlCode"><svg class="ic" aria-hidden="true"><use href="#i-download"/></svg><span>Download lesson.py</span></button>
         <span class="grow"></span>
         <button type="button" id="renderCode" class="accent"><svg class="ic" aria-hidden="true"><use href="#i-clapperboard"/></svg><span>Render this code</span></button>
@@ -199,6 +201,33 @@
       <div id="themeList" class="themelist"></div>
       <div class="row wrap">
         <label class="chk"><input type="checkbox" id="followSystem"> Switch between light and dark with the system</label>
+        <span class="grow"></span>
+        <button value="close" class="accent"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span>Done</span></button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="bgDlg">
+    <form method="dialog" class="dlg">
+      <h2>Background</h2>
+      <div class="row wrap">
+        <div class="seg" id="bgScope" role="radiogroup" aria-label="Which slides">
+          <button type="button" data-bgscope="lesson"><svg class="ic" aria-hidden="true"><use href="#i-presentation"/></svg><span>Whole lesson</span></button>
+          <button type="button" data-bgscope="slide"><svg class="ic" aria-hidden="true"><use href="#i-sticky-note"/></svg><span>This slide only</span></button>
+        </div>
+        <span class="help" id="bgScopeHelp"></span>
+      </div>
+      <div class="bg-main">
+        <div class="bg-side">
+          <svg id="bgPreview" class="bg-preview" viewBox="-7.1111 -4 14.2222 8" aria-label="Preview"></svg>
+          <h3 class="mh">Presets</h3>
+          <div id="bgPresets" class="bg-presets"></div>
+        </div>
+        <div id="bgForm" class="bg-form"></div>
+      </div>
+      <input type="file" id="bgFile" accept="image/*" hidden>
+      <div class="row wrap">
+        <span class="help">Backgrounds are part of the slides: they show when presenting and in the rendered video.</span>
         <span class="grow"></span>
         <button value="close" class="accent"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span>Done</span></button>
       </div>

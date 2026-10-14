@@ -41,6 +41,7 @@ manim-slides RCCircuit                     # present
 - **Your own shapes**: select one or more objects (shift-click or drag a box), then **Save as shape**. Pick a category or make a new one; the shape appears in that category's menu, ready to click or drag into any lesson. Saved shapes live in this browser; **Export** / **Import** in the shape menu moves them between browsers or shares them as a JSON file. **Draw** (`P`) makes a freeform outline: click points, click the first point to close it, `Enter` or double-click to leave it open; drag its corner handles afterwards to reshape it.
 - **Theme and style** (palette button, top right): 27 colour themes, most of them Perun's built-ins, and four styles that change the editor's shape and feel: Studio (flat), Soft (rounded with shadows), Glass (frosted panels) and Technical (square, monospace, drafting grid). They only change the editor; slides keep their own colours.
 - **Slide theme** (slide inspector): recolours a lesson from any of the same themes, Obsidian style. Text given a style from the Text menu (Title, Heading 1–3, Body, Caption) takes that theme's heading colours, and other colours map to the theme's matching accents.
+- **Backgrounds** (slide inspector): solid colours, linear or radial gradients, an image (fill, fit, stretch or tile, with opacity and darkening), a pattern (grid, graph paper, dot grid, perfboard, isometric, polar, ruled, diagonal, crosshatch) and a vignette, plus presets such as Blueprint and Oscilloscope. Set one for the whole lesson or give a slide its own; it cross-fades between slides. The editor grid (grid button in the dock) is separate: it only shows while editing, and snapping follows its spacing.
 - **Timeline groups**: shift-click two or more track names and press Group tracks (or Group in timeline in the inspector). A group folds its tracks into one row whose blocks move all their animations together; the objects stay separate on the slide.
 - **Groups**: `Ctrl+G` groups the selection into one object that moves, rotates, scales, animates and recolours together; `Ctrl+Shift+G` ungroups. Saved shapes are placed as groups.
 
@@ -57,6 +58,7 @@ Shortcuts: `V` select, `W` wire, `P` draw, `R` / `Shift+R` rotate, `Del` delete,
 | `js/manim/` | In-browser Manim: worker (Pyodide), canvas replay, MP4 encoding, MathJax bridge |
 | `py/manimweb/` | Pure-Python stand-ins for Cairo, Pango, LaTeX and Manim's other native dependencies |
 | `js/icons.js`, `js/themes.js` | Icon sprite (Lucide), the editor's themes and styles, and slide themes |
+| `js/backgrounds.js` | Slide backgrounds: SVG preview and the Manim code that draws them |
 | `js/motion.js` | Small feedback animations (menus, slide moves, new objects), off under reduced motion |
 | `vendor/` | MathJax 3.2.2, KaTeX 0.16.11, mp4-muxer 5.2.2 and Lucide icon licence |
 | `js/app.js` | Editor UI |

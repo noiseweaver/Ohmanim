@@ -2,6 +2,7 @@
 // same primitives the editor draws, so the render matches the preview.
 import { REG, exprToPy } from './components.js';
 import { labelPos, timeline, LABEL_SIZE, fontOf, fonts, DEFAULT_FONT } from './render.js';
+import { bgOf, bgKey, isPlain, bgPy, BG_HELPERS, usedAssets, assetFile } from './backgrounds.js';
 
 const n = (v) => {
   const r = Math.round(v * 10000) / 10000;
@@ -137,15 +138,25 @@ export function exportPython(project, { mode = 'slides' } = {}) {
     L.push(`    manim -qh lesson.py ${cls}`);
   }
   if (project.slides.some((s) => s.objects.some((o) => o.type === 'math'))) L.push('\nMath objects use MathTex and need a LaTeX installation.');
+  const images = usedAssets(project).map((id) => assetFile(id, project.assets[id]));
+  if (images.length) L.push(`\nPut these background images next to this file: ${images.join(', ')}`);
+  // Backgrounds: a plain colour shared by every slide is just the camera colour. Anything
+  // else is a full-frame Group behind everything, cross-faded when a slide changes it.
+  const bgs = project.slides.map((s) => bgOf(project, s));
+  const keys = bgs.map(bgKey);
+  const fancy = !(keys.every((k) => k === keys[0]) && isPlain(bgs[0]));
   L.push('"""');
   L.push('from manim import *');
   if (mode === 'slides') L.push('from manim_slides import Slide');
   L.push(HELPERS);
+  if (fancy) L.push(BG_HELPERS);
   L.push('');
   L.push(`class ${cls}(${mode === 'slides' ? 'Slide' : 'Scene'}):`);
   w('def construct(self):', 1);
-  w(`self.camera.background_color = ManimColor(${str(project.bg || "#000000")})`);
+  w(`self.camera.background_color = ManimColor(${str(bgs[0].fill === 'radial' ? bgs[0].color2 : bgs[0].color)})`);
   w('M = {}');
+  let bgVar = null, bgAt = null, nbg = 0;
+  if (fancy) { bgVar = `_bg${nbg++}`; bgAt = keys[0]; w(`${bgVar} = ${bgPy(bgs[0], project)}`); w(`self.add(${bgVar})`); }
   if (mode !== 'slides') w('self.next_slide = lambda notes="": self.wait(1)');
   let lastSlide = -1, tmp = 0;
   beats.forEach((beat, bi) => {
@@ -160,6 +171,15 @@ export function exportPython(project, { mode = 'slides' } = {}) {
       w(`self.next_slide(${notes})`);
     } else if (mode === 'slides' && slide.notes) {
       w(`# notes: ${slide.notes.replace(/\n/g, ' ')}`);
+    }
+    if (fancy && keys[beat.slide] !== bgAt) {
+      // Fade the new background in over the old one. Objects already on screen join the
+      // animation so they stay drawn on top of it.
+      const v = `_bg${nbg++}`;
+      w(`${v} = ${bgPy(bgs[beat.slide], project)}`);
+      w(`self.play(FadeIn(${v}), *[Animation(m) for m in M.values()], run_time=0.8)`);
+      w(`self.remove(${bgVar})`);
+      bgVar = v; bgAt = keys[beat.slide];
     }
     for (const phase of beat.phases) {
       const anims = [], after = [], adds = [];

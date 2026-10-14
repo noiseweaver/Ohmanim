@@ -9,11 +9,13 @@ Op codes (all values are floats, coordinates in Manim scene units):
   5 RGBA r g b a     6 GRAD x0 y0 x1 y1 n (off r g b a)*n
   7 FILL             8 STROKE                    9 WIDTH w
   10 JOIN j          11 CAP c                    12 LINE x y
+  13 IMAGE i ulx uly urx ury dlx dly alpha   (image i of manimweb.IMAGES, drawn
+     into the parallelogram given by its top-left, top-right and bottom-left corners)
 """
 import sys
 import types
 
-MOVE, CURVE, CLOSE, NEWPATH, RGBA, GRAD, FILL, STROKE, WIDTH, JOIN, CAP, LINE = range(1, 13)
+MOVE, CURVE, CLOSE, NEWPATH, RGBA, GRAD, FILL, STROKE, WIDTH, JOIN, CAP, LINE, IMAGE = range(1, 14)
 
 
 class Recorder:

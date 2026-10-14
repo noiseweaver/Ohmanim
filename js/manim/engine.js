@@ -52,7 +52,8 @@ export async function renderTex(keys) {
 
 // Renders `code` and resolves with {url, blob, markers, duration, scene}.
 // onProgress receives worker messages (status, preview) while it runs.
-export function renderCode(code, { width = 1280, height = 720, fps = 30 } = {}, onProgress = () => {}) {
+// assets: image files the code loads, [{name, type, bytes}].
+export function renderCode(code, { width = 1280, height = 720, fps = 30, assets = [] } = {}, onProgress = () => {}) {
   const w = getWorker();
   return new Promise((resolve, reject) => {
     let rounds = 0;
@@ -61,7 +62,7 @@ export function renderCode(code, { width = 1280, height = 720, fps = 30 } = {}, 
         if (++rounds > 5) { off(); return reject(new Error('LaTeX kept changing between runs')); }
         onProgress({ type: 'status', text: `Typesetting ${m.keys.length} LaTeX formula${m.keys.length > 1 ? 's' : ''}…` });
         try { await renderTex(m.keys); } catch (e) { off(); return reject(e); }
-        w.postMessage({ type: 'render', code, width, height, fps, tex: { ...texCache } });
+        w.postMessage({ type: 'render', code, width, height, fps, assets, tex: { ...texCache } });
       } else if (m.type === 'done') {
         off();
         const blob = new Blob([m.mp4], { type: m.mime });
@@ -70,6 +71,6 @@ export function renderCode(code, { width = 1280, height = 720, fps = 30 } = {}, 
         off(); reject(new Error(m.message));
       } else onProgress(m);
     });
-    w.postMessage({ type: 'render', code, width, height, fps, tex: { ...texCache } });
+    w.postMessage({ type: 'render', code, width, height, fps, assets, tex: { ...texCache } });
   });
 }

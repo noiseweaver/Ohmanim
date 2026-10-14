@@ -142,8 +142,8 @@ h3 { margin: 6px 0 0; font-size: 12px; color: var(--muted); font-family: var(--f
 #stage.wire, #stage.draw { cursor: crosshair; }
 .hint { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line); color: var(--text); font-size: 12px; padding: 4px 10px; border-radius: 999px; pointer-events: none; max-width: 90%; text-align: center; box-shadow: var(--shadow-pop); }
 #stage text:not([font-family]), #presentSvg text:not([font-family]), #slideList text:not([font-family]) { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-#grid line { stroke: #fff; stroke-opacity: .05; stroke-width: .01; }
-#grid line.axis { stroke-opacity: .12; }
+#grid line { stroke: currentColor; stroke-opacity: .07; stroke-width: .01; }
+#grid line.axis { stroke-opacity: .16; }
 #objLayer > g { cursor: move; }
 #objLayer > g.sel { filter: drop-shadow(0 0 .04px var(--sel)); }
 .selbox { fill: none; stroke: var(--sel); stroke-width: .02; stroke-dasharray: .08 .06; pointer-events: none; }
@@ -372,3 +372,30 @@ button:active:not(:disabled) { transform: scale(.96); }
 .tl-groupbtn { padding: 2px 8px; font-size: 12px; background: transparent; }
 .tl-groupbtn:disabled { opacity: .45; cursor: default; }
 .menu input { margin: 2px 4px 6px; }
+
+/* ---- background dialog ---- */
+#bgDlg { width: min(980px, 96vw); }
+.bg-main { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(260px, 1fr); gap: 16px; align-items: start; }
+.bg-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.bg-preview { width: 100%; aspect-ratio: 16 / 9; border-radius: var(--r); border: 1px solid var(--line); display: block; background: #000; }
+.bg-presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; max-height: 32vh; overflow: auto; padding: 2px; }
+.bg-presets button { flex-direction: column; align-items: stretch; gap: 4px; padding: 4px; background: var(--field); font-size: 12px; }
+.bg-presets svg { width: 100%; aspect-ratio: 16 / 9; border-radius: var(--r-sm); display: block; }
+.bg-form { display: flex; flex-direction: column; gap: 10px; max-height: 62vh; overflow: auto; padding-right: 4px; }
+.bg-form section { display: flex; flex-direction: column; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.bg-form section:last-child { border-bottom: 0; }
+.bg-form label { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 8px; color: var(--muted); }
+.bg-form .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.bg-form .pair label { grid-template-columns: auto 1fr; }
+.bg-form .rng { display: flex; align-items: center; gap: 8px; color: var(--text); }
+.bg-form .rng input[type=range] { flex: 1; min-width: 0; }
+.bg-form .rng output { min-width: 38px; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.bg-form .seg button { flex: 1; }
+.bg-form .btnrow { display: flex; gap: 6px; flex-wrap: wrap; }
+.mh { margin: 0; font-size: 11px; font-weight: 600; color: var(--muted); font-family: var(--font-label); text-transform: var(--label-case, uppercase); letter-spacing: var(--label-track, .04em); }
+button.slidetheme svg { flex: none; }
+.menu .seg { margin: 2px 6px 4px; }
+.menu .seg button { flex: 1; justify-content: center; }
+.menu .help { max-width: 220px; padding: 4px 8px; font-size: 11px; color: var(--muted); }
+#gridBtn.on { color: var(--accent); }
+@media (max-width: 760px) { .bg-main { grid-template-columns: 1fr; } .bg-form { max-height: none; } }

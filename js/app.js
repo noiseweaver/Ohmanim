@@ -1167,7 +1167,9 @@ function stateBefore(beat) {
 }
 const video = $('#presentVideo');
 // Clips play as real video elements over the slide while previewing and presenting.
-const stageVideos = new VideoLayer($('#stage')), presentVideos = new VideoLayer($('#presentSvg'));
+// A clip imported without a first frame (iOS) gets one the first time it plays.
+const posterFound = () => { persist(); renderSlides(); };
+const stageVideos = new VideoLayer($('#stage'), posterFound), presentVideos = new VideoLayer($('#presentSvg'), posterFound);
 const videosIn = (state) => [...state.values()].filter((o) => o.type === 'video');
 const enteringIds = (beat) => new Set(beat.phases.flat().filter((a) => a.kind === 'enter').map((a) => a.id));
 const presenter = {

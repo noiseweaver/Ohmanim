@@ -15,7 +15,8 @@ const timeout = (p, ms, msg) => Promise.race([p, new Promise((_, reject) => setT
 // Open a video for reading frames. Safari only decodes videos that are in the page and marked
 // inline, and recordings (MediaRecorder WebM) often report an Infinity duration until the
 // browser has seen the end, so seek there once to learn it.
-async function openVideo(url, name = 'That file') {
+// needData: also wait until a frame can be drawn (iOS may refuse until someone taps play).
+async function openVideo(url, name = 'That file', needData = true) {
   const v = document.createElement('video');
   v.muted = true; v.playsInline = true; v.preload = 'auto';
   v.setAttribute('muted', ''); v.setAttribute('playsinline', '');
@@ -30,15 +31,33 @@ async function openVideo(url, name = 'That file') {
       await timeout(known, 20000, `Could not find how long ${name} is.`);
     }
     if (!v.videoWidth || !(v.duration > 0)) throw new Error(`${name} has no picture this browser can show.`);
-    if (v.readyState < 2) {
-      // iOS only loads picture data once a video plays; a muted inline video may play without a tap.
-      const data = once(v, 'loadeddata');
-      v.play().then(() => v.pause()).catch(() => {});
-      await timeout(data, 20000, `${name} took too long to load.`);
-      v.pause();
-    }
+    if (needData) await loadData(v, 20000, `${name} took too long to load.`);
     return v;
   } catch (e) { closeVideo(v); throw e.message === 'This browser cannot play that video.' ? new Error(`This browser can't decode ${name}. Phone videos are often HEVC (H.265), which many browsers can't play; export it as MP4 (H.264) or WebM and try again.`) : e; }
+}
+// iOS only loads picture data once a video plays; a muted inline video may play without a tap.
+async function loadData(v, ms, msg) {
+  if (v.readyState >= 2) return;
+  const data = once(v, 'loadeddata');
+  v.play().then(() => v.pause()).catch(() => {});
+  try { await timeout(data, ms, msg); } finally { v.pause(); }
+}
+// A stand-in first frame (dark, with a play mark) for when the browser won't show one yet.
+function placeholderPoster(w, h) {
+  const k = Math.min(1, 640 / Math.max(w, h)), c = document.createElement('canvas');
+  c.width = Math.max(16, Math.round(w * k)); c.height = Math.max(16, Math.round(h * k));
+  const x = c.getContext('2d'), r = Math.min(c.width, c.height) * 0.14;
+  x.fillStyle = '#1b1f27'; x.fillRect(0, 0, c.width, c.height);
+  x.fillStyle = '#ffffff'; x.globalAlpha = 0.8; x.beginPath();
+  x.moveTo(c.width / 2 - r * 0.6, c.height / 2 - r); x.lineTo(c.width / 2 + r, c.height / 2); x.lineTo(c.width / 2 - r * 0.6, c.height / 2 + r); x.fill();
+  return c.toDataURL('image/jpeg', 0.85);
+}
+// The frame on screen as a JPEG data URL, at most 1280 px.
+function grabPoster(v) {
+  const k = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight)), c = document.createElement('canvas');
+  c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
+  c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', 0.85);
 }
 function closeVideo(v) { v.removeAttribute('src'); v.load(); v.remove(); }
 // Show the frame at time t (seconds) and wait until it is ready to draw.
@@ -59,21 +78,24 @@ export async function importVideo(file, onStep = () => {}) {
   let v = null;
   try {
     onStep(`Opening ${file.name}…`);
-    v = await openVideo(url, file.name);
+    v = await openVideo(url, file.name, false);
     onStep(`Reading the first frame of ${file.name}…`);
     const dur = v.duration;
-    await seekTo(v, Math.min(0.05, dur / 2));
-    const k = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight));
-    const c = document.createElement('canvas');
-    c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
-    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+    // iOS may not hand over a frame until the clip is played with a tap. Then the clip still
+    // imports with a stand-in first frame, and the real one is taken the first time it plays.
+    let poster = null;
+    try {
+      await loadData(v, 4000, 'no frame');
+      await timeout(seekTo(v, Math.min(0.05, dur / 2)), 4000, 'no frame');
+      if (v.readyState >= 2) poster = grabPoster(v);
+    } catch {}
     let hasAudio = false;
     onStep(`Checking ${file.name} for sound…`);
     // Some browsers never answer when asked to decode a video's sound; assume it has some then.
     try { const pcm = await timeout(decode(file), 15000, 'slow'); hasAudio = pcm.some((x) => Math.abs(x) > 1e-4); } catch (e) { hasAudio = e.message === 'slow'; }
     onStep(`Saving ${file.name}…`);
     return { src: await blobToDataURL(file), type: file.type || 'video/mp4', kind: 'video', name: file.name, dur: Math.round(dur * 1000) / 1000,
-      w: v.videoWidth, h: v.videoHeight, poster: c.toDataURL('image/jpeg', 0.85), hasAudio };
+      w: v.videoWidth, h: v.videoHeight, poster: poster || placeholderPoster(v.videoWidth, v.videoHeight), ...(poster ? {} : { posterless: true }), hasAudio };
   } finally { if (v) closeVideo(v); URL.revokeObjectURL(url); }
 }
 
@@ -104,7 +126,8 @@ export async function extractFrames(asset, fps, w, h, onFrame = () => {}) {
 // Real video elements over an SVG slide (scene units, y up). sync() places one per visible
 // clip; clips listed in `fresh` start from the beginning.
 export class VideoLayer {
-  constructor(svg) { this.svg = svg; this.els = new Map(); this.muted = false; }
+  // onPoster(asset): called after a clip without a real first frame got one while playing.
+  constructor(svg, onPoster = () => {}) { this.svg = svg; this.els = new Map(); this.muted = false; this.onPoster = onPoster; }
   sync(objs, assets, fresh = new Set()) {
     const host = this.svg.parentElement;
     const ctm = this.svg.getScreenCTM(), hr = host.getBoundingClientRect();
@@ -118,6 +141,10 @@ export class VideoLayer {
         v = document.createElement('video');
         v.className = 'clipvid'; v.playsInline = true; v.preload = 'auto';
         v.src = videoURL(a); v.poster = posterURL(a);
+        if (a.posterless) v.addEventListener('playing', () => setTimeout(() => {
+          if (!a.posterless || v.readyState < 2) return;
+          try { a.poster = grabPoster(v); delete a.posterless; this.onPoster(a); } catch {}
+        }, 150), { once: true });
         host.appendChild(v);
         this.els.set(o.id, v);
         fresh = new Set([...fresh, o.id]);
@@ -129,7 +156,7 @@ export class VideoLayer {
         transform: `translate(-50%, -50%) rotate(${-(o.rot || 0)}deg)`, opacity: o.opacity ?? 1 });
       v.volume = Math.max(0, Math.min(1, o.vol ?? 1));
       v.muted = this.muted;
-      if (fresh.has(o.id)) { v.currentTime = 0; v.play().catch(() => {}); v.animate?.([{ opacity: 0 }, { opacity: o.opacity ?? 1 }], { duration: 500 }); }
+      if (fresh.has(o.id)) { v.currentTime = 0; v.play().catch(() => { v.muted = true; v.play().catch(() => {}); }); /* iOS may only allow it muted */ v.animate?.([{ opacity: 0 }, { opacity: o.opacity ?? 1 }], { duration: 500 }); }
     }
     for (const [id, v] of this.els) if (!keep.has(id)) { v.pause(); v.remove(); this.els.delete(id); }
   }

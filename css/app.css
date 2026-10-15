@@ -463,3 +463,5 @@ button.slidetheme svg { flex: none; }
 
 /* Video clips playing over the slide (preview and present) */
 .clipvid { position: absolute; object-fit: fill; pointer-events: none; z-index: 1; background: #000; }
+/* File pickers opened from buttons. Kept in the layout (not display:none) because some mobile browsers won't open a hidden one. */
+.filepick { position: fixed; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }

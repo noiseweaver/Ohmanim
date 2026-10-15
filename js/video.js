@@ -30,7 +30,13 @@ async function openVideo(url, name = 'That file') {
       await timeout(known, 20000, `Could not find how long ${name} is.`);
     }
     if (!v.videoWidth || !(v.duration > 0)) throw new Error(`${name} has no picture this browser can show.`);
-    if (v.readyState < 2) await timeout(once(v, 'loadeddata'), 20000, `${name} took too long to load.`);
+    if (v.readyState < 2) {
+      // iOS only loads picture data once a video plays; a muted inline video may play without a tap.
+      const data = once(v, 'loadeddata');
+      v.play().then(() => v.pause()).catch(() => {});
+      await timeout(data, 20000, `${name} took too long to load.`);
+      v.pause();
+    }
     return v;
   } catch (e) { closeVideo(v); throw e.message === 'This browser cannot play that video.' ? new Error(`This browser can't decode ${name}. Phone videos are often HEVC (H.265), which many browsers can't play; export it as MP4 (H.264) or WebM and try again.`) : e; }
 }
@@ -46,12 +52,15 @@ async function seekTo(v, t) {
 export const MAX_VIDEO_MB = 80;
 
 // Read a video file: keeps the file itself, a poster frame for the editor, and whether it has sound.
-export async function importVideo(file) {
+// onStep(text) reports progress, since a large clip takes a while.
+export async function importVideo(file, onStep = () => {}) {
   if (file.size > MAX_VIDEO_MB * 1e6) throw new Error(`${file.name} is over ${MAX_VIDEO_MB} MB. Trim or compress it first.`);
   const url = URL.createObjectURL(file);
   let v = null;
   try {
+    onStep(`Opening ${file.name}…`);
     v = await openVideo(url, file.name);
+    onStep(`Reading the first frame of ${file.name}…`);
     const dur = v.duration;
     await seekTo(v, Math.min(0.05, dur / 2));
     const k = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight));
@@ -59,7 +68,10 @@ export async function importVideo(file) {
     c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
     c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
     let hasAudio = false;
-    try { const pcm = await decode(file); hasAudio = pcm.some((x) => Math.abs(x) > 1e-4); } catch {}
+    onStep(`Checking ${file.name} for sound…`);
+    // Some browsers never answer when asked to decode a video's sound; assume it has some then.
+    try { const pcm = await timeout(decode(file), 15000, 'slow'); hasAudio = pcm.some((x) => Math.abs(x) > 1e-4); } catch (e) { hasAudio = e.message === 'slow'; }
+    onStep(`Saving ${file.name}…`);
     return { src: await blobToDataURL(file), type: file.type || 'video/mp4', kind: 'video', name: file.name, dur: Math.round(dur * 1000) / 1000,
       w: v.videoWidth, h: v.videoHeight, poster: c.toDataURL('image/jpeg', 0.85), hasAudio };
   } finally { if (v) closeVideo(v); URL.revokeObjectURL(url); }

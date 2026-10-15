@@ -101,7 +101,11 @@ function restore(snap) { const s = JSON.parse(snap); project = s.project; attach
 function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); restore(undoStack.pop()); lastCoalesce = null; }
 function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); restore(redoStack.pop()); lastCoalesce = null; }
 
-function toast(msg) { const t = $('#toast'); t.textContent = msg; if (t.hidden) pop(t, 'bottom'); t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 2200); }
+// Longer messages stay up longer so there is time to read them.
+function toast(msg, ms = Math.max(2200, String(msg).length * 70)) { const t = $('#toast'); t.textContent = msg; if (t.hidden) pop(t, 'bottom'); t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), ms); }
+// Anything that fails without its own message still says so.
+window.addEventListener('unhandledrejection', (e) => toast('Something went wrong: ' + (e.reason?.message || e.reason || 'unknown error')));
+window.addEventListener('error', (e) => { if (e.message && !/ResizeObserver|Script error/.test(e.message)) toast('Something went wrong: ' + e.message); });
 
 // ---- stage -------------------------------------------------------------------
 const stage = $('#stage');
@@ -381,10 +385,11 @@ async function addPictures(files, x, y, replace = null) {
   for (const file of files) {
     const video = isVideoFile(file);
     if (replace && video !== (replace.type === 'video')) { toast(`Pick ${replace.type === 'video' ? 'a video' : 'an image'} to replace this ${replace.type === 'video' ? 'clip' : 'picture'}.`); continue; }
-    if (video) toast(`Reading ${file.name}…`);
-    try { loaded.push(video ? await importVideo(file) : await importImage(file)); } catch (err) { toast(`${file.name}: ${err.message}`); }
+    if (video) toast(`Reading ${file.name}…`, 60000);
+    try { loaded.push(video ? await importVideo(file, (t) => toast(t, 60000)) : await importImage(file)); } catch (err) { toast(`${file.name}: ${err.message}`); }
   }
   if (!loaded.length) return;
+  if (loaded.some((a) => a.kind === 'video')) toast(`Added ${loaded.filter((a) => a.kind === 'video').map(picName).join(', ')}`);
   const ids = [];
   edit(() => {
     const assets = { ...(project.assets || {}) };

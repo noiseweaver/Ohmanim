@@ -1,6 +1,6 @@
 // Offline support: the app shell is cached on install; everything else (Pyodide,
 // Python packages from the CDN, KaTeX fonts) is cached the first time it loads. Bump VERSION to ship updates.
-const VERSION = 'mv-14';
+const VERSION = 'mv-15';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png',
   'js/app.js', 'js/icons.js', 'js/motion.js', 'js/backgrounds.js', 'js/store.js', 'js/voice.js', 'js/themes.js', 'js/components.js', 'js/render.js', 'js/player.js', 'js/export.js', 'js/demo.js',
@@ -18,8 +18,11 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   // Network first for our own files so edits show up; cache as fallback offline.
+  // Our own files skip the HTTP cache (GitHub Pages lets browsers keep them for 10 minutes),
+  // so a fresh deploy shows up on the next reload.
+  const own = new URL(e.request.url).origin === self.location.origin && e.request.mode !== 'navigate';
   e.respondWith(
-    fetch(e.request).then((res) => {
+    fetch(own ? new Request(e.request, { cache: 'no-cache' }) : e.request).then((res) => {
       if (res.ok || res.type === 'opaque') { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); }
       return res;
     }).catch(() => caches.match(e.request, { ignoreSearch: true }))

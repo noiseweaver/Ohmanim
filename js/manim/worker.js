@@ -23,19 +23,21 @@ let booting = null;
 const base = new URL('../../', import.meta.url); // site root
 
 const post = (m, t) => self.postMessage(m, t || []);
-const status = (text) => post({ type: 'status', text });
+const status = (text, boot) => post({ type: 'status', text, ...(boot ? { boot } : {}) });
+// Installing Manim happens in these steps; the editor shows them as a progress bar.
+const BOOT_STEPS = 5;
 
 async function boot() {
-  status('Downloading Python (Pyodide)…');
+  status('Downloading Python (Pyodide)…', [0, BOOT_STEPS]);
   const { loadPyodide } = await import(PYODIDE_URL + 'pyodide.mjs');
   const py = await loadPyodide({ indexURL: PYODIDE_URL });
-  status('Installing NumPy, SciPy and friends…');
+  status('Installing NumPy, SciPy and friends…', [1, BOOT_STEPS]);
   await py.loadPackage('micropip');
   const micropip = py.pyimport('micropip');
   await micropip.install(PURE_DEPS);
-  status(`Installing Manim ${MANIM_VERSION}…`);
+  status(`Installing Manim ${MANIM_VERSION}…`, [2, BOOT_STEPS]);
   await micropip.install(`manim==${MANIM_VERSION}`, { deps: false });
-  status('Loading the browser shims…');
+  status('Loading the browser shims…', [3, BOOT_STEPS]);
   const FS = py.FS;
   for (const d of ['/manimweb', '/manimweb/manimweb', '/manimweb/fonts', '/manimweb/fonts/files']) try { FS.mkdir(d); } catch {}
   await Promise.all([
@@ -46,7 +48,7 @@ async function boot() {
       FS.writeFile('/manimweb/fonts/fonts.json', json);
     })(),
   ]);
-  status('Starting Manim…');
+  status('Starting Manim…', [4, BOOT_STEPS]);
   await py.runPythonAsync(`
 import sys, os
 os.environ["MANIMWEB_FONTS"] = "/manimweb/fonts"
@@ -105,6 +107,7 @@ async function render({ code, width, height, fps, tex, assets = [], audio = {} }
   let result;
   try {
     const r = await pyodide.runPythonAsync(`
+import manimweb
 from pyodide.ffi import to_js
 def _wrap(kind, payload, n, bg):
     _mv_sink(kind, to_js(memoryview(payload)) if kind == "frame" else payload, n, bg)

@@ -3,7 +3,7 @@ import { worldPrims, primsSVG, objectSVG, bbox, timeline, emphList, fonts, DEFAU
 import { Player, applyBeat, stateSVG } from './player.js';
 import { exportPython } from './export.js';
 import { demoProject } from './demo.js';
-import { renderCode, warmUp, onEngine } from './manim/engine.js';
+import { renderCode, warmUp, onEngine, engineReady } from './manim/engine.js';
 import { icon, installIcons } from './icons.js';
 import { pop, flash, appear, flip, shake } from './motion.js';
 import { bgOf, bgSVG, bgKey, isLight, BG_DEFAULT, FILLS, PATTERNS, FITS, PRESETS, importImage, usedAssets, assetFile, assetBytes, mediaFile } from './backgrounds.js';
@@ -981,6 +981,7 @@ async function startRender() {
   showRenderResult(false);
   const [width, height, fps] = $('#quality').value.split('x').map(Number);
   const t0 = performance.now();
+  if (!engineReady()) $('#renderStatus').textContent = 'Waiting for Manim to finish installing. The render starts right after.';
   try {
     const audio = await narrationPCM();
     const res = await renderCode(renderCodeText, { width, height, fps, assets: renderAssets(), audio }, (m) => {
@@ -1009,6 +1010,26 @@ $('#dlVideo').addEventListener('click', () => download(lastRender.blob, slug(pro
 $('#dlVtt').addEventListener('click', () => download(new Blob([lastRender.captions.vtt], { type: 'text/vtt' }), slug(project.title) + '.vtt'));
 $('#dlSrt').addEventListener('click', () => download(new Blob([lastRender.captions.srt], { type: 'application/x-subrip' }), slug(project.title) + '.srt'));
 $('#presentVideoBtn').addEventListener('click', () => { $('#renderDlg').close(); presenter.open(0, true); });
+// While Manim installs (the first time), the preview shows a progress bar; a render
+// started meanwhile simply waits for it.
+onEngine((m) => {
+  const bar = $('#bootBar'), fill = bar.querySelector('i');
+  if (m.type === 'ready' || m.type === 'error') {
+    if (bar.hidden) return;
+    fill.style.width = '100%';
+    setTimeout(() => (bar.hidden = true), m.type === 'ready' ? 400 : 0);
+    return;
+  }
+  if (m.type !== 'status' || !m.boot) return;
+  const [i, n] = m.boot;
+  bar.hidden = false;
+  bar.querySelector('.bb-step').textContent = `${m.text} Step ${i + 1} of ${n}.`;
+  bar.setAttribute('aria-valuenow', Math.round((i / n) * 100));
+  // Jump to where this step starts, then creep towards the next one.
+  fill.style.transition = 'none'; fill.style.width = (i / n) * 100 + '%';
+  void fill.offsetWidth;
+  fill.style.transition = ''; fill.style.width = ((i + 0.9) / n) * 100 + '%';
+});
 onEngine((m) => { if (m.type === 'status' && !rendering && $('#renderDlg').open) $('#renderStatus').textContent = m.text; if (m.type === 'ready' && !rendering && $('#renderDlg').open && !(lastRender && lastRender.code === renderCodeText)) $('#renderStatus').textContent = 'Manim is loaded. Ready to render.'; });
 
 // ---- presenter -------------------------------------------------------------------

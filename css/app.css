@@ -311,6 +311,14 @@ dialog.small { width: min(420px, 94vw); }
 .renderview { position: relative; background: #000; border-radius: var(--r); overflow: hidden; aspect-ratio: 16 / 9; max-width: 100%; }
 .renderview canvas, .renderview video { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .renderview video[hidden], .renderview canvas[hidden] { display: none; }
+.bootbar { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; color: #e8eaf0; background: rgba(10, 12, 16, .72); text-align: center; }
+.bootbar[hidden] { display: none; }
+.bootbar b { font-size: 16px; }
+.bootbar .bb-step { font-size: 13px; opacity: .85; min-height: 1.2em; }
+.bootbar small { font-size: 11px; opacity: .6; }
+.bb-track { width: min(360px, 80%); height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .14); overflow: hidden; }
+/* Each step eases slowly towards the next one, since the downloads report no progress of their own. */
+.bb-track i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: inherit; transition: width 25s cubic-bezier(.1, .7, .3, 1); }
 .err { margin: 0; color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, var(--panel)); border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--line)); border-radius: var(--r-sm); padding: 8px 10px; white-space: pre-wrap; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; max-height: 30vh; overflow: auto; }
 #presentVideo { position: fixed; inset: 0; width: 100vw; height: 100vh; object-fit: contain; background: #000; }
 #presentVideo[hidden] { display: none; }

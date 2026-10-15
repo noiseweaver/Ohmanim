@@ -39,7 +39,8 @@ async function boot() {
   const micropip = py.pyimport('micropip');
   status(`Installing Manim ${MANIM_VERSION}…`, [2, BOOT_STEPS]);
   for (const pkg of [...PYPI_PKGS, `manim==${MANIM_VERSION}`]) {
-    try { await micropip.install(pkg, { deps: false }); }
+    // Keyword arguments must go through callKwargs; a plain JS object would arrive as a positional one.
+    try { await micropip.install.callKwargs(pkg, { deps: false }); }
     catch (err) { throw new Error(`Could not install ${pkg}: ${pyErrorMessage(err)}`); }
   }
   status('Loading the browser shims…', [3, BOOT_STEPS]);

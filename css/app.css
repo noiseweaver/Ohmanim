@@ -224,6 +224,12 @@ button.toggle.on { color: var(--accent); background: color-mix(in srgb, var(--ac
 .tl-step button:hover { color: var(--accent); }
 .tl-step .ic { width: 13px; height: 13px; }
 .tl-step.new { font-style: italic; opacity: .7; }
+.tl-step .hold { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; font-size: 11px; opacity: .55; font-variant-numeric: tabular-nums; }
+.tl-step .hold.own { opacity: 1; color: var(--accent); }
+.tl-step .hold:hover { opacity: 1; }
+.tl-step .hold .ic { width: 11px; height: 11px; }
+.holdrow { display: flex; align-items: center; gap: 6px; padding: 2px 4px 6px; }
+.holdrow input { width: 80px; margin: 0; }
 .tl-corner { z-index: 3; font-size: 11px; color: var(--muted); top: 0; position: sticky; }
 .tl-name { cursor: pointer; font-size: 12px; overflow: hidden; }
 .tl-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

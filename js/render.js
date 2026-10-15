@@ -213,6 +213,11 @@ const stepOf = (v) => Math.max(1, Math.round(v || 1));
 // morphs and fade-outs from the previous slide, then entrances, then emphasis.
 // Morphs and fade-outs play on the slide's first beat unless given their own step
 // (`o.mstep` on a carried object, `slide.outSteps[id]` for one that left).
+// The shortest a click lasts, in seconds: its own hold time, else the lesson's. A click also
+// lasts as long as its animations and its narration.
+export const DEFAULT_HOLD = 2;
+export const holdOf = (project, slide, k) => slide.holds?.[k] ?? project.hold ?? DEFAULT_HOLD;
+
 export function timeline(project) {
   const beats = [];
   project.slides.forEach((slide, si) => {
@@ -240,6 +245,8 @@ export function timeline(project) {
     // A click with narration is a beat even when nothing animates on it.
     const voice = slide.voice || {};
     for (const k in voice) if (voice[k]) at(stepOf(+k));
+    // So is a click given its own hold time.
+    for (const k in slide.holds || {}) at(stepOf(+k));
     const keys = [...steps.keys()].sort((a, b) => a - b);
     if (!keys.length) keys.push(1), at(1);
     keys.forEach((k, i) => {
@@ -249,7 +256,7 @@ export function timeline(project) {
       if (trans.length) phases.push(trans);
       if (s.enter.length) phases.push(s.enter);
       if (s.emph.length) phases.push(s.emph);
-      beats.push({ slide: si, step: k, first: i === 0, phases, voice: voice[k] || null, caption: (voice[k] && slide.captions?.[k]) || '' });
+      beats.push({ slide: si, step: k, first: i === 0, phases, voice: voice[k] || null, caption: (voice[k] && slide.captions?.[k]) || '', hold: holdOf(project, slide, k) });
     });
   });
   return beats;

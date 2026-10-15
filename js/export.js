@@ -68,6 +68,13 @@ def _axes(xr, yr, w, h, color, f=None, fcolor=YELLOW, width=4):
     return parts
 
 
+def _hold(scene, t0, dur):
+    """Wait until dur seconds have passed since t0 (a click's minimum length)."""
+    left = t0 + dur - scene.renderer.time
+    if left > 1 / config.frame_rate:
+        scene.wait(left)
+
+
 def _flow(m, color=YELLOW):
     return ShowPassingFlash(m[0].copy().set_stroke(color, width=8), time_width=0.5, run_time=1.5)
 `;
@@ -138,13 +145,6 @@ def _say(scene, name, caps=()):
     t0 = scene.renderer.time
     _CAPS.extend((t0 + a, t0 + b, s) for a, b, s in caps)
     return t0
-
-
-def _hold(scene, t0, dur):
-    """Wait until a clip that started at t0 has finished."""
-    left = t0 + dur - scene.renderer.time
-    if left > 1 / config.frame_rate:
-        scene.wait(left)
 `;
 
 // Captions go next to the video as WebVTT and SRT, timed from where each clip starts.
@@ -261,9 +261,12 @@ export function exportPython(project, { mode = 'slides' } = {}) {
       bgVar = v; bgAt = keys[beat.slide];
     }
     const clip = beat.voice && project.assets?.[beat.voice];
+    // A click lasts as long as its animations, its narration and its hold time, whichever is longest.
+    const len = Math.max(beat.hold || 0, clip ? clip.dur : 0);
+    if (len > 0) w('_click = self.renderer.time');
     if (clip) {
       const caps = captionCues(beat.caption, clip.dur).map(([a, b, t]) => `(${n(a)}, ${n(b)}, ${str(t)})`);
-      w(`_v = _say(self, ${str(mediaFile(beat.voice, clip))}${caps.length ? `, [${caps.join(', ')}]` : ''})`);
+      w(`_say(self, ${str(mediaFile(beat.voice, clip))}${caps.length ? `, [${caps.join(', ')}]` : ''})`);
     }
     for (const phase of beat.phases) {
       const anims = [], after = [], adds = [];
@@ -288,7 +291,7 @@ export function exportPython(project, { mode = 'slides' } = {}) {
       if (anims.length) w(`self.play(${anims.join(', ')})`);
       after.forEach((s) => w(s));
     }
-    if (clip) w(`_hold(self, _v, ${n(clip.dur)})`);
+    if (len > 0) w(`_hold(self, _click, ${n(len)})`);
   });
   w('');
   if (captioned) w(`_write_captions(${str(cls)})`);

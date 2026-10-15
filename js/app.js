@@ -1,5 +1,5 @@
 import { REG, CATEGORIES, ENTER_ANIMS, EMPH_ANIMS, makeObject, uid, checkExpr } from './components.js';
-import { worldPrims, primsSVG, objectSVG, bbox, timeline, emphList, fonts, DEFAULT_FONT, FRAME_W, FRAME_H } from './render.js';
+import { worldPrims, primsSVG, objectSVG, bbox, timeline, emphList, fonts, DEFAULT_FONT, FRAME_W, FRAME_H, holdOf, DEFAULT_HOLD } from './render.js';
 import { Player, applyBeat, stateSVG } from './player.js';
 import { exportPython } from './export.js';
 import { demoProject } from './demo.js';
@@ -669,7 +669,7 @@ function renderInspector() {
       ${field('Speaker notes', 'notes', 'textarea', s.notes, { placeholder: 'Shown in presenter mode and exported to manim-slides' })}
       </div>
       <button type="button" class="slidetheme" data-slideact="bg"><svg viewBox="-7.1111 -4 14.2222 8" aria-hidden="true">${bgSVG(bgOf(project, s), project)}</svg><span><b>Background</b><br>${s.background ? 'This slide has its own' : 'Lesson background'}</span></button>
-      <h4>Lesson</h4><div class="sec" data-scope="project">${field('Font', 'font', 'font', project.font || DEFAULT_FONT, { inherit: null })}</div>
+      <h4>Lesson</h4><div class="sec" data-scope="project">${field('Font', 'font', 'font', project.font || DEFAULT_FONT, { inherit: null })}${field('Each click lasts at least (s)', 'hold', 'number', project.hold ?? DEFAULT_HOLD, { step: 0.5, min: 0 })}</div>
       <button type="button" class="slidetheme" data-slideact="theme">${slideSwatch(project.slideTheme)}<span><b>Slide theme</b><br>${escapeHTML(project.slideTheme ? THEMES.find((t) => t.id === project.slideTheme)?.name || 'Custom' : 'Your own colours')}</span></button>
       <div class="note">
         <b>How slides animate</b><br>
@@ -722,7 +722,7 @@ $('#inspector').addEventListener('input', (e) => {
   if (v === null) return;
   if (scope === 'slide') { edit(() => (slide()[key] = v), 'slide' + key); renderSlides(); return; }
   if (scope === 'multi') { const objs = selectedAll(); edit(() => objs.forEach((q) => recolor(q, v)), 'multicolor'); renderStage(); renderSlides(); return; }
-  if (scope === 'project') { edit(() => (project[key] = v), 'proj' + key); fonts.lesson = project.font || DEFAULT_FONT; renderStage(); renderSlides(); return; }
+  if (scope === 'project') { edit(() => (project[key] = key === 'hold' ? Math.max(0, +v || 0) : v), 'proj' + key); if (key === 'hold') renderTimeline(); fonts.lesson = project.font || DEFAULT_FONT; renderStage(); renderSlides(); return; }
   const o = selected();
   if (!o) return;
   if (key === 'role') edit(() => applyRole(project, o, v));
@@ -839,10 +839,11 @@ const commands = {
     let state = stateBefore(beats[0]);
     $('#objLayer').style.opacity = 0; $('#ghostLayer').style.opacity = 0; $('#overlay').style.display = 'none';
     for (const b of beats) {
+      const t0 = performance.now();
       const v = playClip(project.assets?.[b.voice]);
       state = await player.play(state, b);
       if (!state) { stopClip(); break; }
-      await v; await sleep(350);
+      await v; await sleep(Math.max(150, b.hold * 1000 - (performance.now() - t0)));
     }
     $('#objLayer').style.opacity = ''; $('#ghostLayer').style.opacity = ''; $('#overlay').style.display = '';
     renderStage();
@@ -1198,17 +1199,19 @@ function renderTimeline() {
   const prev = prevSlide()?.objects || [];
   const leaving = prev.filter((p) => !s.objects.some((o) => o.id === p.id));
   const blocks = slideBlocks();
-  const nClicks = new Set([...blocks.map((b) => b.step), ...Object.keys(s.voice || {}).filter((k) => s.voice[k]).map(Number)]).size;
+  const holdKeys = Object.keys(s.holds || {}).map(Number);
+  const nClicks = new Set([...blocks.map((b) => b.step), ...Object.keys(s.voice || {}).filter((k) => s.voice[k]).map(Number), ...holdKeys]).size;
   $('#tlSub').textContent = `Slide ${cur + 1} · ${nClicks ? nClicks + ' click' + (nClicks === 1 ? '' : 's') : 'nothing animates yet'}`;
   const voice = s.voice || {};
   if (!s.objects.length && !leaving.length && !Object.keys(voice).length) { box.innerHTML = '<div class="tl-empty">Add something to the slide and its animations show up here, one track per object.</div>'; return; }
-  const maxStep = Math.max(1, ...blocks.map((b) => b.step), ...Object.keys(voice).filter((k) => voice[k]).map(Number));
+  const maxStep = Math.max(1, ...blocks.map((b) => b.step), ...Object.keys(voice).filter((k) => voice[k]).map(Number), ...holdKeys);
   const cols = maxStep + 1;
   let h = `<div class="tl-grid" style="grid-template-columns: 170px repeat(${cols}, minmax(128px, 1fr))">`;
   h += `<div class="tl-corner">Object</div>`;
   for (let k = 1; k <= cols; k++) {
     h += k <= maxStep
-      ? `<div class="tl-step" data-step="${k}">Click ${k}<button data-playstep="${k}" title="Play click ${k}" aria-label="Play click ${k}">${icon('play')}</button></div>`
+      ? `<div class="tl-step" data-step="${k}">Click ${k}<button data-playstep="${k}" title="Play click ${k}" aria-label="Play click ${k}">${icon('play')}</button>` +
+        `<button class="hold${s.holds?.[k] != null ? ' own' : ''}" data-hold="${k}" title="Click ${k} lasts at least this long (longer if its animations or narration run longer). Click to change." aria-label="Length of click ${k}">${icon('timer')}${fmtSec(holdOf(project, s, k))}</button></div>`
       : `<div class="tl-step new" data-step="${k}">New click</div>`;
   }
   // Narration: one clip per click.
@@ -1307,7 +1310,8 @@ function openGroupMenu(gid, rect, rename = false) {
 function compactSteps() {
   const s = slide();
   const vk = Object.keys(s.voice || {}).filter((k) => s.voice[k]).map(Number);
-  const used = [...new Set([...slideBlocks().map((b) => b.step), ...vk])].sort((a, b) => a - b);
+  const hk = Object.keys(s.holds || {}).map(Number);
+  const used = [...new Set([...slideBlocks().map((b) => b.step), ...vk, ...hk])].sort((a, b) => a - b);
   const map = new Map(used.map((k, i) => [k, i + 1]));
   const m = (k) => map.get(Math.round(k)) ?? k;
   for (const o of s.objects) {
@@ -1317,6 +1321,7 @@ function compactSteps() {
   }
   if (s.outSteps) for (const id in s.outSteps) s.outSteps[id] = m(s.outSteps[id]);
   if (s.voice) s.voice = Object.fromEntries(vk.map((k) => [m(k), s.voice[k]]));
+  if (s.holds) s.holds = Object.fromEntries(hk.map((k) => [m(k), s.holds[k]]));
   if (s.captions) s.captions = Object.fromEntries(Object.entries(s.captions).filter(([k, t]) => t && vk.includes(+k)).map(([k, t]) => [m(+k), t]));
 }
 
@@ -1403,6 +1408,29 @@ function openVoiceMenu(k, rect) {
     if (v === 'del') { stopClip(); edit(() => { delete s.voice[k]; if (s.captions) delete s.captions[k]; compactSteps(); }); renderTimeline(); renderSlides(); }
   };
 }
+const fmtSec = (v) => `${Math.round(v * 10) / 10} s`;
+// How long a click lasts at least: its own time, or the lesson's default.
+function openHoldMenu(k, rect) {
+  const s = slide(), own = s.holds?.[k];
+  const m = $('#tlMenu');
+  m.innerHTML = `<div class="mh">Click ${k} lasts at least</div>` +
+    `<div class="holdrow"><input id="holdIn" type="number" min="0" step="0.5" value="${own ?? holdOf(project, s, k)}" aria-label="Seconds"><span>seconds</span></div>` +
+    (own != null ? `<button data-h="reset">${icon('rotate-ccw')}Use the lesson's ${fmtSec(project.hold ?? DEFAULT_HOLD)}</button>` : '') +
+    '<div class="help">Longer if its animations or narration take longer. Present still waits for your click.</div>';
+  showMenu(rect);
+  const inp = $('#holdIn');
+  inp.focus(); inp.select();
+  inp.addEventListener('input', () => {
+    const v = parseFloat(inp.value);
+    if (!(v >= 0)) return;
+    edit(() => { (s.holds ||= {})[k] = Math.round(v * 100) / 100; }, 'hold' + s.id + k);
+  });
+  inp.addEventListener('change', () => renderTimeline());
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === 'Escape') { m.hidden = true; renderTimeline(); } });
+  m.onclick = (e) => {
+    if (e.target.closest('[data-h="reset"]')) { edit(() => { delete s.holds[k]; if (!Object.keys(s.holds).length) delete s.holds; compactSteps(); }); m.hidden = true; renderTimeline(); }
+  };
+}
 // Record a whole voiceover: present from this slide and talk; every click starts the next clip.
 async function startTake() {
   try { (await startRecording()).cancel(); } catch (err) { return toast(err.message); }
@@ -1471,6 +1499,8 @@ $('#timeline').addEventListener('click', (e) => {
   const rb = e.target.closest('[data-rec]');
   if (rb) return recordClip(+rb.dataset.rec);
   if (e.target.closest('[data-recstop]')) return stopClipRecording();
+  const hb = e.target.closest('[data-hold]');
+  if (hb) return openHoldMenu(+hb.dataset.hold, hb.getBoundingClientRect());
   const vb = e.target.closest('[data-voice]');
   if (vb) return openVoiceMenu(+vb.dataset.voice, vb.getBoundingClientRect());
   const play = e.target.closest('[data-playstep]');
@@ -1570,10 +1600,11 @@ async function playStep(k) {
   if (!beat) return;
   const state = stateBefore(beat);
   $('#objLayer').style.opacity = 0; $('#ghostLayer').style.opacity = 0; $('#overlay').style.display = 'none';
+  const t0 = performance.now();
   const v = playClip(project.assets?.[beat.voice]);
   await player.play(state, beat);
   await v;
-  await sleep(500);
+  await sleep(Math.max(300, beat.hold * 1000 - (performance.now() - t0)));
   $('#objLayer').style.opacity = ''; $('#ghostLayer').style.opacity = ''; $('#overlay').style.display = '';
   renderStage();
 }

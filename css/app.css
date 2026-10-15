@@ -142,20 +142,20 @@ h3 { margin: 6px 0 0; font-size: 12px; color: var(--muted); font-family: var(--f
 #stage.wire, #stage.draw { cursor: crosshair; }
 .hint { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line); color: var(--text); font-size: 12px; padding: 4px 10px; border-radius: 999px; pointer-events: none; max-width: 90%; text-align: center; box-shadow: var(--shadow-pop); }
 #stage text:not([font-family]), #presentSvg text:not([font-family]), #slideList text:not([font-family]) { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-#grid line { stroke: currentColor; stroke-opacity: .07; stroke-width: calc(.01 * var(--k, 1)); }
+#grid line { stroke: currentColor; stroke-opacity: .07; stroke-width: calc(.01px * var(--k, 1)); }
 #grid line.axis { stroke-opacity: .16; }
 #objLayer > g { cursor: move; }
 #objLayer > g.sel { filter: drop-shadow(0 0 .04px var(--sel)); }
 /* Overlay sizes scale with the zoom (--k = visible width / slide width) so they stay the same on screen. */
 #stage { --k: 1; }
-.selbox { fill: none; stroke: var(--sel); stroke-width: calc(.02 * var(--k)); stroke-dasharray: calc(.08 * var(--k)) calc(.06 * var(--k)); pointer-events: none; }
-.handle { fill: var(--sel); stroke: #000; stroke-width: calc(.015 * var(--k)); cursor: grab; }
-.marquee { fill: color-mix(in srgb, var(--sel) 8%, transparent); stroke: var(--sel); stroke-width: calc(.015 * var(--k)); stroke-dasharray: calc(.06 * var(--k)) calc(.05 * var(--k)); pointer-events: none; }
-.drawline { fill: none; stroke: var(--sel); stroke-width: calc(.03 * var(--k)); stroke-dasharray: calc(.1 * var(--k)) calc(.06 * var(--k)); pointer-events: none; }
-.handle.first { fill: none; stroke: var(--sel); stroke-width: calc(.03 * var(--k)); }
-.carried { fill: none; stroke: var(--accent2); stroke-width: calc(.02 * var(--k)); stroke-dasharray: calc(.03 * var(--k)) calc(.05 * var(--k)); pointer-events: none; }
-.guide { stroke: #ff3d9a; stroke-width: calc(.014 * var(--k)); pointer-events: none; }
-.slideframe { fill: none; stroke: var(--line); stroke-width: calc(.012 * var(--k)); pointer-events: none; }
+.selbox { fill: none; stroke: var(--sel); stroke-width: calc(.02px * var(--k)); stroke-dasharray: calc(.08px * var(--k)) calc(.06px * var(--k)); pointer-events: none; }
+.handle { fill: var(--sel); stroke: #000; stroke-width: calc(.015px * var(--k)); cursor: grab; }
+.marquee { fill: color-mix(in srgb, var(--sel) 8%, transparent); stroke: var(--sel); stroke-width: calc(.015px * var(--k)); stroke-dasharray: calc(.06px * var(--k)) calc(.05px * var(--k)); pointer-events: none; }
+.drawline { fill: none; stroke: var(--sel); stroke-width: calc(.03px * var(--k)); stroke-dasharray: calc(.1px * var(--k)) calc(.06px * var(--k)); pointer-events: none; }
+.handle.first { fill: none; stroke: var(--sel); stroke-width: calc(.03px * var(--k)); }
+.carried { fill: none; stroke: var(--accent2); stroke-width: calc(.02px * var(--k)); stroke-dasharray: calc(.03px * var(--k)) calc(.05px * var(--k)); pointer-events: none; }
+.guide { stroke: #ff3d9a; stroke-width: calc(.014px * var(--k)); pointer-events: none; }
+.slideframe { fill: none; stroke: var(--line); stroke-width: calc(.012px * var(--k)); pointer-events: none; }
 .mathfo { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; white-space: nowrap; }
 
 .dock { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: var(--panel); border-top: var(--border-w) solid var(--line); border-bottom: var(--border-w) solid var(--line); flex-wrap: wrap; }

@@ -3,8 +3,10 @@ import { drawOps } from './draw.js';
 import { Muxer, ArrayBufferTarget } from '../../vendor/mp4-muxer.mjs';
 
 async function pickCodec(width, height, fps) {
+  // H.264 level 4.0 covers 1080p at 30 fps; 1080p at 60 fps needs level 4.2.
+  const big = width * height * fps > 1920 * 1088 * 30;
   const candidates = [
-    { codec: 'avc1.640028', mux: 'avc' }, // H.264 High 4.0 (up to 1080p)
+    { codec: big ? 'avc1.64002A' : 'avc1.640028', mux: 'avc' }, // H.264 High 4.2 / 4.0
     { codec: 'avc1.42E01F', mux: 'avc' }, // H.264 Baseline 3.1
     { codec: 'vp09.00.40.08', mux: 'vp9' },
   ];

@@ -28,15 +28,15 @@ const status = (text) => post({ type: 'status', text });
 async function boot() {
   status('Downloading Python (Pyodide)…');
   const { loadPyodide } = await import(PYODIDE_URL + 'pyodide.mjs');
-  pyodide = await loadPyodide({ indexURL: PYODIDE_URL });
+  const py = await loadPyodide({ indexURL: PYODIDE_URL });
   status('Installing NumPy, SciPy and friends…');
-  await pyodide.loadPackage('micropip');
-  const micropip = pyodide.pyimport('micropip');
+  await py.loadPackage('micropip');
+  const micropip = py.pyimport('micropip');
   await micropip.install(PURE_DEPS);
   status(`Installing Manim ${MANIM_VERSION}…`);
   await micropip.install(`manim==${MANIM_VERSION}`, { deps: false });
   status('Loading the browser shims…');
-  const FS = pyodide.FS;
+  const FS = py.FS;
   for (const d of ['/manimweb', '/manimweb/manimweb', '/manimweb/fonts', '/manimweb/fonts/files']) try { FS.mkdir(d); } catch {}
   await Promise.all([
     ...SHIM_FILES.map(async (f) => FS.writeFile('/manimweb/' + f, await (await fetch(new URL('py/' + f, base))).text())),
@@ -47,18 +47,20 @@ async function boot() {
     })(),
   ]);
   status('Starting Manim…');
-  await pyodide.runPythonAsync(`
+  await py.runPythonAsync(`
 import sys, os
 os.environ["MANIMWEB_FONTS"] = "/manimweb/fonts"
 sys.path.insert(0, "/manimweb")
 import manimweb
 manimweb.install()
 `);
+  // Only now is Manim importable; a render that arrives earlier waits on `booting`.
+  pyodide = py;
   post({ type: 'ready' });
 }
 
 async function render({ code, width, height, fps, tex, assets = [], audio = {} }) {
-  if (!pyodide) await (booting ||= boot());
+  await (booting ||= boot());
   const enc = await new FrameEncoder(width, height, fps).init({ withAudio: Object.keys(audio).length > 0 });
   const sounds = []; // [{name, time}]
   // The scene writes its captions as .vtt and .srt files; clear old ones first.

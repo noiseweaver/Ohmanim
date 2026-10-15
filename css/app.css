@@ -448,3 +448,16 @@ button.slidetheme svg { flex: none; }
 .alignrow { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 6px; }
 .alignrow button { padding: 4px; }
 .alignrow .sep { width: 1px; background: var(--line); margin: 2px 2px; }
+
+/* Sound effects row and imported audio */
+.tl-cell.tl-voice { gap: 4px; flex-wrap: wrap; }
+.tl-rec.tl-imp { padding: 1px 5px; }
+.tl-name.tl-sound, .tl-cell.tl-sound { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.sblk { background: color-mix(in srgb, var(--accent) 22%, var(--panel2)); max-width: 100%; }
+.sblk i { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+.sblk span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.holdrow input[type=range] { width: 120px; }
+.musicrow { display: flex; align-items: center; gap: 6px; padding: 4px 0 2px; min-width: 0; }
+.musicrow .ic { width: 14px; height: 14px; flex: none; color: var(--accent); }
+.musicrow span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.musicrow small { color: var(--muted); }

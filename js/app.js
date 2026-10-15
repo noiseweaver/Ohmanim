@@ -8,7 +8,7 @@ import { icon, installIcons } from './icons.js';
 import { pop, flash, appear, flip, shake } from './motion.js';
 import { bgOf, bgSVG, bgKey, isLight, BG_DEFAULT, FILLS, PATTERNS, FITS, PRESETS, importImage, usedAssets, assetFile, assetBytes, mediaFile } from './backgrounds.js';
 import { saveAssets, loadAssets, pruneAssets } from './store.js';
-import { startRecording, releaseMic, playClip, stopClip, decode, toWav, fmtDur } from './voice.js';
+import { startRecording, releaseMic, playClip, stopClip, decode, toWav, fmtDur, importAudio, playSound, stopSounds, startMusic, stopMusic } from './voice.js';
 import { THEMES, STYLES, loadLook, saveLook, applyLook, themeSwatch, TEXT_ROLES, applySlideTheme, applyRole, slideSwatch, slidePalette } from './themes.js';
 
 installIcons();
@@ -733,6 +733,7 @@ function renderInspector() {
       <button type="button" class="slidetheme" data-slideact="bg"><svg viewBox="-7.1111 -4 14.2222 8" aria-hidden="true">${bgSVG(bgOf(project, s), project)}</svg><span><b>Background</b><br>${s.background ? 'This slide has its own' : 'Lesson background'}</span></button>
       <h4>Lesson</h4><div class="sec" data-scope="project">${field('Font', 'font', 'font', project.font || DEFAULT_FONT, { inherit: null })}${field('Each click lasts at least (s)', 'hold', 'number', project.hold ?? DEFAULT_HOLD, { step: 0.5, min: 0 })}</div>
       <button type="button" class="slidetheme" data-slideact="theme">${slideSwatch(project.slideTheme)}<span><b>Slide theme</b><br>${escapeHTML(project.slideTheme ? THEMES.find((t) => t.id === project.slideTheme)?.name || 'Custom' : 'Your own colours')}</span></button>
+      ${musicSection()}
       <div class="note">
         <b>How slides animate</b><br>
         The <i>timeline</i> under the canvas shows every animation on this slide: one track per object and one column per click. Drag a block to another click, click it to change the animation, or use <b>+</b> to add an emphasis.<br><br>
@@ -784,6 +785,7 @@ $('#inspector').addEventListener('input', (e) => {
   const key = el.dataset.key, v = readInput(el);
   if (v === null) return;
   if (scope === 'slide') { edit(() => (slide()[key] = v), 'slide' + key); renderSlides(); return; }
+  if (scope === 'music') { edit(() => (project.music[key] = key === 'duck' ? (v ? MUSIC_DUCK : 0) : v), 'music' + key); return; }
   if (scope === 'multi') { const objs = selectedAll(); edit(() => objs.forEach((q) => recolor(q, v)), 'multicolor'); renderStage(); renderSlides(); return; }
   if (scope === 'project') { edit(() => (project[key] = key === 'hold' ? Math.max(0, +v || 0) : v), 'proj' + key); if (key === 'hold') renderTimeline(); fonts.lesson = project.font || DEFAULT_FONT; renderStage(); renderSlides(); return; }
   const o = selected();
@@ -810,6 +812,10 @@ $('#inspector').addEventListener('input', (e) => {
 $('#inspector').addEventListener('click', (e) => {
   if (e.target.closest('[data-slideact="theme"]')) { renderSlideThemes(); $('#slideThemeDlg').showModal(); return; }
   if (e.target.closest('[data-slideact="bg"]')) { openBg(); return; }
+  const ma = e.target.closest('[data-musicact]')?.dataset.musicact;
+  if (ma === 'add' || ma === 'replace') return pickAudio({ music: true });
+  if (ma === 'play') { const b = e.target.closest('[data-musicact]'); if (b.classList.toggle('on')) { startMusic({ ...project.music, duck: 0 }, project.assets?.[project.music.asset]); } else stopMusic(); return; }
+  if (ma === 'del') { stopMusic(); edit(() => { project.music = null; }); renderInspector(); return; }
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (act) objAction(act);
 });
@@ -911,8 +917,9 @@ const commands = {
     for (const b of beats) {
       const t0 = performance.now();
       const v = playClip(project.assets?.[b.voice]);
+      playSounds(b);
       state = await player.play(state, b);
-      if (!state) { stopClip(); break; }
+      if (!state) { stopClip(); stopSounds(); break; }
       await v; await sleep(Math.max(150, b.hold * 1000 - (performance.now() - t0)));
     }
     $('#objLayer').style.opacity = ''; $('#ghostLayer').style.opacity = ''; $('#overlay').style.display = '';
@@ -1136,6 +1143,7 @@ const presenter = {
       return;
     }
     const start = this.beats.findIndex((b) => b.slide === fromSlide);
+    if (project.music && !this.take) startMusic(project.music, project.assets?.[project.music.asset]);
     this.state = new Map();
     for (let k = 0; k < start; k++) this.state = applyBeat(this.state, this.beats[k]);
     this.i = start - 1;
@@ -1145,7 +1153,7 @@ const presenter = {
   },
   close() {
     this.player.stop();
-    stopClip();
+    stopClip(); stopSounds(); stopMusic();
     if (this.take) this.take.finish();
     cancelAnimationFrame(this.raf); video.pause();
     $('#present').hidden = true;
@@ -1193,6 +1201,7 @@ const presenter = {
     this.setBg(this.beats[this.i].slide);
     if (this.take) await this.take.cut(this.beats[this.i]);
     else playClip(project.assets?.[this.beats[this.i].voice]);
+    playSounds(this.beats[this.i]);
     const target = applyBeat(this.state, this.beats[this.i]);
     const res = await this.player.play(this.state, this.beats[this.i]);
     this.state = target;
@@ -1206,7 +1215,7 @@ const presenter = {
       this.i--; video.currentTime = this.markers[this.i].time - 0.001; this.pos();
       return;
     }
-    this.player.stop(); this.busy = false; stopClip();
+    this.player.stop(); this.busy = false; stopClip(); stopSounds();
     this.i--;
     this.state = new Map();
     for (let k = 0; k <= this.i; k++) this.state = applyBeat(this.state, this.beats[k]);
@@ -1270,11 +1279,13 @@ function renderTimeline() {
   const leaving = prev.filter((p) => !s.objects.some((o) => o.id === p.id));
   const blocks = slideBlocks();
   const holdKeys = Object.keys(s.holds || {}).map(Number);
-  const nClicks = new Set([...blocks.map((b) => b.step), ...Object.keys(s.voice || {}).filter((k) => s.voice[k]).map(Number), ...holdKeys]).size;
+  const sounds = s.sounds || {};
+  const soundKeys = Object.keys(sounds).filter((k) => sounds[k]?.length).map(Number);
+  const nClicks = new Set([...blocks.map((b) => b.step), ...Object.keys(s.voice || {}).filter((k) => s.voice[k]).map(Number), ...holdKeys, ...soundKeys]).size;
   $('#tlSub').textContent = `Slide ${cur + 1} · ${nClicks ? nClicks + ' click' + (nClicks === 1 ? '' : 's') : 'nothing animates yet'}`;
   const voice = s.voice || {};
-  if (!s.objects.length && !leaving.length && !Object.keys(voice).length) { box.innerHTML = '<div class="tl-empty">Add something to the slide and its animations show up here, one track per object.</div>'; return; }
-  const maxStep = Math.max(1, ...blocks.map((b) => b.step), ...Object.keys(voice).filter((k) => voice[k]).map(Number), ...holdKeys);
+  if (!s.objects.length && !leaving.length && !Object.keys(voice).length && !soundKeys.length) { box.innerHTML = '<div class="tl-empty">Add something to the slide and its animations show up here, one track per object.</div>'; return; }
+  const maxStep = Math.max(1, ...blocks.map((b) => b.step), ...Object.keys(voice).filter((k) => voice[k]).map(Number), ...holdKeys, ...soundKeys);
   const cols = maxStep + 1;
   let h = `<div class="tl-grid" style="grid-template-columns: 170px repeat(${cols}, minmax(128px, 1fr))">`;
   h += `<div class="tl-corner">Object</div>`;
@@ -1292,7 +1303,16 @@ function renderTimeline() {
     h += `<div class="tl-cell tl-voice" data-step="${k}">` + (live
       ? `<button class="tl-rec live" data-recstop title="Stop recording"><i class="lvl"></i>${icon('square')}<span>0.0 s</span></button>`
       : a ? `<span class="vblk" data-voice="${k}" title="${s.captions?.[k] ? escapeHTML(s.captions[k]) + '\n\n' : ''}Narration for click ${k}: click to play, re-record or add a caption"><i style="width:${Math.min(100, 12 + a.dur * 8)}%"></i>${icon('volume-2')}${fmtDur(a.dur)}${s.captions?.[k] ? '<b class="cc">CC</b>' : ''}</span>`
-        : `<button class="tl-rec" data-rec="${k}" title="Record narration for ${k <= maxStep ? 'click ' + k : 'a new click'}" aria-label="Record narration for click ${k}">${icon('mic')}<span>Record</span></button>`) + '</div>';
+        : `<button class="tl-rec" data-rec="${k}" title="Record narration for ${k <= maxStep ? 'click ' + k : 'a new click'}" aria-label="Record narration for click ${k}">${icon('mic')}<span>Record</span></button>` +
+          `<button class="tl-rec tl-imp" data-voicefile="${k}" title="Use an audio file as the narration for ${k <= maxStep ? 'click ' + k : 'a new click'}" aria-label="Narration from a file for click ${k}">${icon('upload')}</button>`) + '</div>';
+  }
+  // Sound effects: any number per click, starting with it.
+  h += `<div class="tl-name tl-voice tl-sound" title="Sound effects that play when each click starts">${icon('volume-2')}<span>Sounds</span></div>`;
+  for (let k = 1; k <= cols; k++) {
+    h += `<div class="tl-cell tl-voice tl-sound" data-step="${k}">` + (sounds[k] || []).map((sd, i) => {
+      const a = project.assets?.[sd.asset];
+      return a ? `<span class="vblk sblk" data-sound="${k}" data-i="${i}" title="${escapeHTML(a.name || 'Sound')} · ${fmtDur(a.dur)}: click to play, change its volume or remove it"><i style="width:${Math.min(100, 12 + a.dur * 8)}%"></i>${icon('volume-2')}<span>${escapeHTML(soundName(a))}</span></span>` : '';
+    }).join('') + `<button class="tl-rec tl-addsound" data-addsound="${k}" title="Add a sound effect to ${k <= maxStep ? 'click ' + k : 'a new click'}" aria-label="Add a sound to click ${k}">${icon('plus')}<span>${(sounds[k] || []).length ? '' : 'Sound'}</span></button></div>`;
   }
   const row = (o, gone, inGroup) => {
     const selC = !gone && isSel(o.id) ? ' tl-row-sel' : '';
@@ -1381,7 +1401,8 @@ function compactSteps() {
   const s = slide();
   const vk = Object.keys(s.voice || {}).filter((k) => s.voice[k]).map(Number);
   const hk = Object.keys(s.holds || {}).map(Number);
-  const used = [...new Set([...slideBlocks().map((b) => b.step), ...vk, ...hk])].sort((a, b) => a - b);
+  const sk = Object.keys(s.sounds || {}).filter((k) => s.sounds[k]?.length).map(Number);
+  const used = [...new Set([...slideBlocks().map((b) => b.step), ...vk, ...hk, ...sk])].sort((a, b) => a - b);
   const map = new Map(used.map((k, i) => [k, i + 1]));
   const m = (k) => map.get(Math.round(k)) ?? k;
   for (const o of s.objects) {
@@ -1392,6 +1413,7 @@ function compactSteps() {
   if (s.outSteps) for (const id in s.outSteps) s.outSteps[id] = m(s.outSteps[id]);
   if (s.voice) s.voice = Object.fromEntries(vk.map((k) => [m(k), s.voice[k]]));
   if (s.holds) s.holds = Object.fromEntries(hk.map((k) => [m(k), s.holds[k]]));
+  if (s.sounds) s.sounds = Object.fromEntries(sk.map((k) => [m(k), s.sounds[k]]));
   if (s.captions) s.captions = Object.fromEntries(Object.entries(s.captions).filter(([k, t]) => t && vk.includes(+k)).map(([k, t]) => [m(+k), t]));
 }
 
@@ -1418,6 +1440,57 @@ function setBlockStep(b, k) {
 
 const blockOf = (el) => el.dataset.kind === 'group' ? { kind: 'group', id: el.dataset.id, step: +el.dataset.i }
   : slideBlocks().find((b) => b.kind === el.dataset.kind && b.id === el.dataset.id && String(b.i ?? '') === el.dataset.i);
+
+// ---- sound: imported audio, sound effects and music ------------------------------------
+const MUSIC_DUCK = 0.35; // music volume while narration plays, as a fraction of its own
+const soundName = (a) => String(a.name || 'Sound').replace(/\.[a-z0-9]+$/i, '').slice(0, 24);
+let audioFor = null;
+function pickAudio(target) { audioFor = target; $('#audioFile').click(); }
+$('#audioFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  const target = audioFor;
+  audioFor = null;
+  if (!file || !target) return;
+  let asset;
+  try { asset = await importAudio(file); } catch (err) { return toast(err.message); }
+  const id = uid(), s = slide();
+  assetPool[id] = asset;
+  edit(() => {
+    project.assets = { ...(project.assets || {}), [id]: asset };
+    if (target.music) project.music = { vol: 0.3, duck: MUSIC_DUCK, ...(project.music || {}), asset: id };
+    else if (target.voice) { (s.voice ||= {})[target.voice] = id; compactSteps(); }
+    else if (target.sound) { ((s.sounds ||= {})[target.sound] ||= []).push({ asset: id, vol: 1 }); compactSteps(); }
+  });
+  renderTimeline(); renderSlides(); renderInspector();
+  toast(target.music ? `${soundName(asset)} plays under the whole lesson` : `Added ${soundName(asset)} (${fmtDur(asset.dur)})`);
+});
+function playSounds(beat) { for (const sd of beat.sounds || []) playSound(project.assets?.[sd.asset], sd.vol ?? 1); }
+function openSoundMenu(k, i, rect) {
+  const s = slide(), sd = s.sounds?.[k]?.[i], a = sd && project.assets?.[sd.asset];
+  if (!a) return;
+  const m = $('#tlMenu');
+  m.innerHTML = `<div class="mh">${escapeHTML(soundName(a))} · click ${k} · ${fmtDur(a.dur)}</div><button data-sd="play">${icon('play')}Play</button>` +
+    `<div class="holdrow"><span>Volume</span><input id="sndVol" type="range" min="0" max="1" step="0.05" value="${sd.vol ?? 1}" aria-label="Volume"></div>` +
+    `<button data-sd="del">${icon('trash-2')}Remove sound</button><div class="help">Starts with the click. It doesn't make the click longer; give the click a hold time for that.</div>`;
+  showMenu(rect);
+  $('#sndVol').addEventListener('input', (e) => edit(() => { sd.vol = +e.target.value; }, 'sndvol' + s.id + k + i));
+  $('#sndVol').addEventListener('change', () => playSound(a, sd.vol));
+  m.onclick = (e) => {
+    const v = e.target.closest('[data-sd]')?.dataset.sd;
+    if (!v) return;
+    if (v === 'play') return playSound(a, sd.vol ?? 1);
+    m.hidden = true;
+    if (v === 'del') { edit(() => { s.sounds[k].splice(i, 1); if (!s.sounds[k].length) delete s.sounds[k]; compactSteps(); }); renderTimeline(); renderSlides(); }
+  };
+}
+function musicSection() {
+  const mu = project.music, a = mu && project.assets?.[mu.asset];
+  if (!a) return `<h4>Music</h4><div class="btnrow"><button data-musicact="add">${icon('volume-2')}Add background music</button></div><div class="help">Loops under the whole video, quieter while narration plays.</div>`;
+  return `<h4>Music</h4><div class="musicrow">${icon('volume-2')}<span title="${escapeHTML(a.name || '')}">${escapeHTML(soundName(a))}</span><small>${fmtDur(a.dur)}</small></div>` +
+    `<div class="sec" data-scope="music">${field('Volume', 'vol', 'range', mu.vol ?? 0.3, { step: 0.05, min: 0, max: 1 })}${field('Quieter under narration', 'duck', 'bool', !!mu.duck)}</div>` +
+    `<div class="btnrow"><button data-musicact="play">${icon('play')}Listen</button><button data-musicact="replace">${icon('upload')}Replace</button><button data-musicact="del">${icon('trash-2')}Remove</button></div>`;
+}
 
 // ---- narration ---------------------------------------------------------------------
 // One clip per click, recorded here in the timeline or in one take while presenting.
@@ -1459,7 +1532,7 @@ function openVoiceMenu(k, rect) {
   const s = slide(), a = project.assets?.[s.voice?.[k]];
   if (!a) return;
   const m = $('#tlMenu');
-  m.innerHTML = `<div class="mh">Narration · click ${k} · ${fmtDur(a.dur)}</div><button data-v="play">${icon('play')}Play</button><button data-v="again">${icon('mic')}Record again</button><button data-v="del">${icon('trash-2')}Remove narration</button>` +
+  m.innerHTML = `<div class="mh">Narration · click ${k} · ${fmtDur(a.dur)}</div><button data-v="play">${icon('play')}Play</button><button data-v="again">${icon('mic')}Record again</button><button data-v="file">${icon('upload')}Use a file instead</button><button data-v="del">${icon('trash-2')}Remove narration</button>` +
     `<hr><div class="mh">Caption</div><textarea id="capText" rows="3" placeholder="Type what this clip says" aria-label="Caption for click ${k}">${escapeHTML(s.captions?.[k] || '')}</textarea>` +
     '<div class="help">Exported with the video as a WebVTT or SRT file, not burned in.</div>';
   showMenu(rect);
@@ -1475,6 +1548,7 @@ function openVoiceMenu(k, rect) {
     m.hidden = true;
     if (v === 'play') playClip(a);
     if (v === 'again') recordClip(k);
+    if (v === 'file') pickAudio({ voice: k });
     if (v === 'del') { stopClip(); edit(() => { delete s.voice[k]; if (s.captions) delete s.captions[k]; compactSteps(); }); renderTimeline(); renderSlides(); }
   };
 }
@@ -1573,6 +1647,12 @@ $('#timeline').addEventListener('click', (e) => {
   if (hb) return openHoldMenu(+hb.dataset.hold, hb.getBoundingClientRect());
   const vb = e.target.closest('[data-voice]');
   if (vb) return openVoiceMenu(+vb.dataset.voice, vb.getBoundingClientRect());
+  const vf = e.target.closest('[data-voicefile]');
+  if (vf) return pickAudio({ voice: +vf.dataset.voicefile });
+  const as = e.target.closest('[data-addsound]');
+  if (as) return pickAudio({ sound: +as.dataset.addsound });
+  const sb = e.target.closest('[data-sound]');
+  if (sb) return openSoundMenu(+sb.dataset.sound, +sb.dataset.i, sb.getBoundingClientRect());
   const play = e.target.closest('[data-playstep]');
   if (play) return playStep(+play.dataset.playstep);
   const add = e.target.closest('[data-addemph]');
@@ -1672,6 +1752,7 @@ async function playStep(k) {
   $('#objLayer').style.opacity = 0; $('#ghostLayer').style.opacity = 0; $('#overlay').style.display = 'none';
   const t0 = performance.now();
   const v = playClip(project.assets?.[beat.voice]);
+  playSounds(beat);
   await player.play(state, beat);
   await v;
   await sleep(Math.max(300, beat.hold * 1000 - (performance.now() - t0)));

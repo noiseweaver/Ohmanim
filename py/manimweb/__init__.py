@@ -141,7 +141,7 @@ class WebFileWriter:
         # The host mixes the audio; it only needs which file starts when.
         if not MISSING:
             import os
-            WebFileWriter.sink("sound", os.path.basename(str(sound_file)), float(time), "")
+            WebFileWriter.sink("sound", os.path.basename(str(sound_file)), float(time), str(float(gain or 0)))
 
     def add_audio_segment(self, *a, **k):
         pass
@@ -157,6 +157,15 @@ class WebFileWriter:
 
     def print_file_ready_message(self, *a):
         pass
+
+
+def music(name, gain, duck, fade, end, voiced):
+    """A looping music bed under the whole video (gain and duck in dB), mixed by the host.
+    voiced lists (start time, file name) of the narration it dips under."""
+    if not MISSING and WebFileWriter.sink:
+        import json, os
+        WebFileWriter.sink("music", json.dumps({"name": os.path.basename(str(name)), "gain": float(gain), "duck": float(duck),
+                                                "fade": float(fade), "voiced": [[float(t), os.path.basename(str(n))] for t, n in voiced]}), float(end), "")
 
 
 def make_slide_class():
@@ -176,7 +185,8 @@ def render(code, scene_name=None, sink=None, width=1280, height=720, fps=30, tex
 
     sink(kind, payload, n, bg): kind is "frame" (payload = float32 op bytes,
     n = repeat count, bg = background hex), "slide" (payload = notes), "sound"
-    (payload = file name, n = start time in seconds) or "section".
+    (payload = file name, n = start time in seconds, bg = gain in dB), "music" (payload =
+    JSON settings, n = video length) or "section".
     """
     install()
     import types

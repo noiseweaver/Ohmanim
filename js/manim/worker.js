@@ -67,10 +67,31 @@ manimweb.install()
   post({ type: 'ready' });
 }
 
+// Loop the music under the whole video, dipping by `duck` dB (with short ramps) while
+// narration plays and fading out at the end.
+function mixMusic(pcm, bed, m, audio) {
+  const R = AUDIO_RATE, ramp = Math.round(0.3 * R), n = Math.min(pcm.length, Math.round((m.end || Infinity) * R));
+  const spans = m.voiced.filter(([, name]) => audio[name]).map(([t, name]) => [Math.round(t * R), Math.round(t * R) + audio[name].length]).sort((a, b) => a[0] - b[0]);
+  const low = 10 ** (m.duck / 20), base = 10 ** (m.gain / 20), fade = Math.max(1, Math.round((m.fade || 0) * R));
+  let j = 0;
+  for (let i = 0; i < n; i++) {
+    while (j < spans.length && spans[j][1] + ramp < i) j++;
+    // How far into a dip this sample is: 0 outside narration, 1 inside, ramping at the edges.
+    let d = 0;
+    for (let k = j; k < spans.length && spans[k][0] - ramp <= i; k++) {
+      const [a, b] = spans[k];
+      d = Math.max(d, i < a ? 1 - (a - i) / ramp : i > b ? 1 - (i - b) / ramp : 1);
+    }
+    const out = n - i < fade ? (n - i) / fade : 1;
+    pcm[i] += bed[i % bed.length] * base * (1 + (low - 1) * d) * out;
+  }
+}
+
 async function render({ code, width, height, fps, tex, assets = [], audio = {} }) {
   await (booting ||= boot());
   const enc = await new FrameEncoder(width, height, fps).init({ withAudio: Object.keys(audio).length > 0 });
-  const sounds = []; // [{name, time}]
+  const sounds = []; // [{name, time, gain}]
+  let music = null; // {name, gain, duck, fade, voiced: [[time, name]], end}
   // The scene writes its captions as .vtt and .srt files; clear old ones first.
   const cwd = pyodide.FS.cwd(), isCaption = (f) => /\.(vtt|srt)$/.test(f);
   for (const f of pyodide.FS.readdir(cwd).filter(isCaption)) pyodide.FS.unlink(cwd + '/' + f);
@@ -95,7 +116,9 @@ async function render({ code, width, height, fps, tex, assets = [], audio = {} }
     } else if (kind === 'slide') {
       enc.marker(String(payload || ''));
     } else if (kind === 'sound') {
-      sounds.push({ name: String(payload), time: +n });
+      sounds.push({ name: String(payload), time: +n, gain: +bg || 0 });
+    } else if (kind === 'music') {
+      try { music = { ...JSON.parse(String(payload)), end: +n }; } catch {}
     }
   };
 
@@ -130,16 +153,20 @@ _res
     post({ type: 'missingTex', keys: result.missing });
     return;
   }
-  // Mix every narration clip in at the time the scene started it.
+  // Mix every clip in at the time the scene started it, plus the music bed.
   let pcm = null;
   const heard = sounds.filter((s) => audio[s.name]);
-  if (heard.length && enc.audio) {
+  const bed = music && audio[music.name];
+  if ((heard.length || bed) && enc.audio) {
     pcm = new Float32Array(Math.ceil((enc.frameNo / fps) * AUDIO_RATE));
     for (const s of heard) {
-      const clip = audio[s.name], at = Math.round(s.time * AUDIO_RATE);
-      for (let i = 0; i < clip.length && at + i < pcm.length; i++) pcm[at + i] += clip[i];
+      const clip = audio[s.name], at = Math.round(s.time * AUDIO_RATE), g = 10 ** (s.gain / 20);
+      for (let i = 0; i < clip.length && at + i < pcm.length; i++) pcm[at + i] += clip[i] * g;
     }
-  } else if (heard.length) status('This browser cannot encode audio, so the video has no narration.');
+    if (bed) mixMusic(pcm, bed, music, audio);
+    // Keep the sum from clipping.
+    for (let i = 0; i < pcm.length; i++) pcm[i] = Math.max(-1, Math.min(1, pcm[i]));
+  } else if (heard.length || bed) status('This browser cannot encode audio, so the video has no sound.');
   const out = await enc.finish(pcm);
   const captions = {};
   for (const f of pyodide.FS.readdir(cwd).filter(isCaption)) captions[f.slice(-3)] = pyodide.FS.readFile(cwd + '/' + f, { encoding: 'utf8' });

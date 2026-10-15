@@ -164,13 +164,14 @@ const EMPH = {
   Flash: (m) => `Flash(${m}, color=YELLOW)`, FlowCurrent: (m) => `_flow(${m})`,
 };
 
-const VOICE_HELPERS = `
+const AUDIO_HELPERS = `
 # --- narration ---------------------------------------------------------------
 from pathlib import Path as _VPath
 _VHERE = _VPath(__file__).parent if "__file__" in globals() else _VPath(".")
 
 
 _CAPS = []
+_VOICED = []
 
 
 def _say(scene, name, caps=()):
@@ -178,8 +179,49 @@ def _say(scene, name, caps=()):
     as (start, end, text) in seconds from the start of the clip."""
     scene.add_sound(str(_VHERE / name))
     t0 = scene.renderer.time
+    _VOICED.append((t0, name))
     _CAPS.extend((t0 + a, t0 + b, s) for a, b, s in caps)
     return t0
+
+
+def _sfx(scene, name, gain=0.0):
+    """Play a sound effect now, gain in dB."""
+    scene.add_sound(str(_VHERE / name), gain=gain)
+`;
+
+// Background music, laid under the whole video once the scene has finished playing.
+const MUSIC_HELPERS = `
+
+def _music(scene, name, gain=-10.0, duck=-9.0, fade=2.0):
+    """Loop a music bed under the whole video at gain dB, duck dB quieter while narration
+    plays, fading out over the last fade seconds. Call it at the end of construct()."""
+    end = scene.renderer.time
+    try:
+        import manimweb  # rendering in Ohmanim: the browser mixes it
+        return manimweb.music(name, gain, duck, fade, end, _VOICED)
+    except ImportError:
+        pass
+    from pydub import AudioSegment
+    bed = AudioSegment.from_file(str(_VHERE / name))
+    ms = int(end * 1000)
+    if not len(bed) or ms <= 0:
+        return
+    bed = (bed * (ms // len(bed) + 1))[:ms]
+    spans = []
+    for t, n in sorted(_VOICED):
+        a = int(t * 1000)
+        b = a + len(AudioSegment.from_file(str(_VHERE / n)))
+        if spans and a <= spans[-1][1] + 600:
+            spans[-1][1] = max(spans[-1][1], b)
+        else:
+            spans.append([a, b])
+    if duck:
+        for a, b in spans:
+            bed = bed.fade(to_gain=duck, start=max(0, a - 300), end=max(1, a))
+            if b < ms:
+                bed = bed.fade(to_gain=-duck, start=b, end=min(ms, b + 300))
+    bed = bed.apply_gain(gain).fade_out(min(ms, int(fade * 1000)))
+    scene.renderer.file_writer.add_audio_segment(bed, time=0)
 `;
 
 // Captions go next to the video as WebVTT and SRT, timed from where each clip starts.
@@ -228,6 +270,11 @@ export function captionCues(text, dur) {
   });
 }
 
+// Volume (0..1) as Manim's gain in decibels.
+const dB = (v) => 20 * Math.log10(Math.max(0.001, v));
+// A click's sound effects whose files are in the lesson, and not silenced.
+const soundsOf = (project, beat) => (beat.sounds || []).filter((sd) => sd.asset && project.assets?.[sd.asset] && (sd.vol ?? 1) > 0);
+
 export function exportPython(project, { mode = 'slides' } = {}) {
   fonts.lesson = project.font || DEFAULT_FONT;
   pyAssets = project.assets || {};
@@ -250,7 +297,9 @@ export function exportPython(project, { mode = 'slides' } = {}) {
   const media = usedAssets(project).map((id) => mediaFile(id, project.assets[id]));
   if (media.length) L.push(`\nPut these files next to this file (Download media in Ohmanim): ${media.join(', ')}`);
   const voiced = beats.some((b) => b.voice && project.assets?.[b.voice]);
-  if (voiced) L.push('Narration uses self.add_sound; rendering it on a computer needs ffmpeg.');
+  const music = project.music?.asset && project.assets?.[project.music.asset] ? project.music : null;
+  const audible = voiced || !!music || beats.some((b) => soundsOf(project, b).length);
+  if (audible) L.push('Sound uses self.add_sound; rendering it on a computer needs ffmpeg.');
   const captioned = beats.some((b) => b.caption && b.voice && project.assets?.[b.voice]);
   if (captioned) L.push(`Captions are written next to this file as ${cls}.vtt and ${cls}.srt, timed to the video.`);
   // Backgrounds: a plain colour shared by every slide is just the camera colour. Anything
@@ -265,7 +314,8 @@ export function exportPython(project, { mode = 'slides' } = {}) {
   if (fancy) L.push(BG_HELPERS);
   const pictured = project.slides.some((s) => s.objects.some(hasImage));
   if (pictured) L.push(IMAGE_HELPERS);
-  if (voiced) L.push(VOICE_HELPERS);
+  if (audible) L.push(AUDIO_HELPERS);
+  if (music) L.push(MUSIC_HELPERS);
   if (captioned) L.push(CAPTION_HELPERS);
   L.push('');
   L.push(`class ${cls}(${mode === 'slides' ? 'Slide' : 'Scene'}):`);
@@ -306,6 +356,7 @@ export function exportPython(project, { mode = 'slides' } = {}) {
       const caps = captionCues(beat.caption, clip.dur).map(([a, b, t]) => `(${n(a)}, ${n(b)}, ${str(t)})`);
       w(`_say(self, ${str(mediaFile(beat.voice, clip))}${caps.length ? `, [${caps.join(', ')}]` : ''})`);
     }
+    for (const sd of soundsOf(project, beat)) w(`_sfx(self, ${str(mediaFile(sd.asset, project.assets[sd.asset]))}${sd.vol < 1 ? `, ${n(dB(sd.vol))}` : ''})`);
     for (const phase of beat.phases) {
       const anims = [], after = [], adds = [];
       for (const a of phase) {
@@ -335,6 +386,7 @@ export function exportPython(project, { mode = 'slides' } = {}) {
   });
   w('');
   if (captioned) w(`_write_captions(${str(cls)})`);
-  w('self.next_slide()' + (mode === 'slides' ? '' : ''));
+  w('self.next_slide()');
+  if (music) w(`_music(self, ${str(mediaFile(music.asset, project.assets[music.asset]))}, ${n(dB(music.vol ?? 0.3))}, ${n(music.duck ? dB(music.duck) : 0)})`);
   return L.join('\n') + '\n';
 }

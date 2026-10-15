@@ -89,6 +89,15 @@ export async function toWav(asset) {
   return new Blob([buf], { type: 'audio/wav' });
 }
 
+// Read an audio file someone picked: narration recorded elsewhere, a sound effect or music.
+export async function importAudio(file) {
+  if (file.size > 40e6) throw new Error(`${file.name} is over 40 MB. Trim or compress it first.`);
+  let pcm;
+  try { pcm = await decode(file); } catch { throw new Error(`${file.name} is not audio this browser can read.`); }
+  const src = await blobToDataURL(file);
+  return { src, type: file.type || 'audio/mpeg', dur: Math.round((pcm.length / SAMPLE_RATE) * 1000) / 1000, name: file.name, kind: 'audio' };
+}
+
 // Play a clip; resolves when it ends or is stopped.
 let current = null;
 export function playClip(asset) {
@@ -104,3 +113,31 @@ export function playClip(asset) {
 export function stopClip() { if (current) { const a = current; current = null; a.pause(); } }
 
 export const fmtDur = (s) => (s >= 60 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : `${s.toFixed(1)} s`);
+
+// Sound effects play over everything else and don't stop each other.
+const effects = new Set();
+export function playSound(asset, vol = 1) {
+  if (!asset) return;
+  const a = new Audio(assetURL(asset));
+  a.volume = Math.max(0, Math.min(1, vol));
+  effects.add(a);
+  a.onended = a.onerror = () => effects.delete(a);
+  a.play().catch(() => effects.delete(a));
+}
+export function stopSounds() { effects.forEach((a) => a.pause()); effects.clear(); }
+
+// Background music: loops under the lesson and dips while narration plays.
+let bed = null;
+export function startMusic(m, asset) {
+  stopMusic();
+  if (!m || !asset) return;
+  const a = new Audio(assetURL(asset));
+  a.loop = true;
+  a.volume = m.vol ?? 0.3;
+  a.play().catch(() => {});
+  bed = { a, timer: setInterval(() => {
+    const want = (m.vol ?? 0.3) * (current && m.duck ? m.duck : 1);
+    a.volume = Math.max(0, Math.min(1, a.volume + (want - a.volume) * 0.25));
+  }, 50) };
+}
+export function stopMusic() { if (bed) { clearInterval(bed.timer); bed.a.pause(); bed = null; } }

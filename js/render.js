@@ -272,6 +272,9 @@ export function timeline(project) {
     for (const k in voice) if (voice[k]) at(stepOf(+k));
     // So is a click given its own hold time.
     for (const k in slide.holds || {}) at(stepOf(+k));
+    // And a click with a sound effect.
+    const sounds = slide.sounds || {};
+    for (const k in sounds) if (sounds[k]?.length) at(stepOf(+k));
     const keys = [...steps.keys()].sort((a, b) => a - b);
     if (!keys.length) keys.push(1), at(1);
     keys.forEach((k, i) => {
@@ -281,7 +284,7 @@ export function timeline(project) {
       if (trans.length) phases.push(trans);
       if (s.enter.length) phases.push(s.enter);
       if (s.emph.length) phases.push(s.emph);
-      beats.push({ slide: si, step: k, first: i === 0, phases, voice: voice[k] || null, caption: (voice[k] && slide.captions?.[k]) || '', hold: holdOf(project, slide, k) });
+      beats.push({ slide: si, step: k, first: i === 0, phases, voice: voice[k] || null, caption: (voice[k] && slide.captions?.[k]) || '', hold: holdOf(project, slide, k), sounds: sounds[k] || [] });
     });
   });
   return beats;

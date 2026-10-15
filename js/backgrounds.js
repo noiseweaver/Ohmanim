@@ -227,7 +227,25 @@ export function usedAssets(project, kind = null) {
 // File name an asset gets next to the exported code.
 export const mediaFile = (id, asset) => (asset.kind === 'audio' ? `audio-${id}.wav` : asset.kind === 'video' ? `video-${id}.${videoExt(asset)}` : assetFile(id, asset));
 // A clip's soundtrack, saved next to it as WAV so desktop Manim needs no extra tools.
-export const clipSoundFile = (id) => `video-${id}.wav`;
+// A clip object's trimmed sound gets its own file name, so two trims of one clip don't collide.
+export const clipSoundFile = (id, range = null) => (range && (range[0] > 0.0005 || !range.full) ? `video-${id}-${Math.round(range[0] * 1000)}-${Math.round(range[1] * 1000)}.wav` : `video-${id}.wav`);
+// The part of its file a clip object plays, in seconds: [start, end], full when untrimmed.
+export function clipRange(o, asset) {
+  const dur = asset?.dur || 0, a = Math.max(0, Math.min(dur, o.trimIn || 0));
+  const b = Math.max(a, Math.min(dur, o.trimOut ?? dur));
+  return Object.assign([a, b], { full: a <= 0.0005 && b >= dur - 0.0005 });
+}
+// Every clip object's sound the lesson needs: [{id, range, file}], one per distinct trim.
+export function clipSoundUses(project) {
+  const out = new Map();
+  const visit = (list) => (list || []).forEach((o) => {
+    const a = o.type === 'video' && project.assets?.[o.asset];
+    if (a?.hasAudio && (o.vol ?? 1) > 0) { const range = clipRange(o, a), file = clipSoundFile(o.asset, range); out.set(file, { id: o.asset, range, file }); }
+    visit(o.children);
+  });
+  project.slides.forEach((s) => visit(s.objects));
+  return [...out.values()];
+}
 const videoExt = (asset) => (/webm/.test(asset.type) ? 'webm' : /quicktime/.test(asset.type) ? 'mov' : /ogg/.test(asset.type) ? 'ogv' : 'mp4');
 
 // ---- Manim export ---------------------------------------------------------------

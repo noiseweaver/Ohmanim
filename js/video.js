@@ -105,17 +105,17 @@ export const videoURL = (asset) => assetURL(asset);
 // The clip's soundtrack as mono PCM (for the renderer) — decodeAudioData reads video files too.
 export const videoPCM = (asset) => decode(asset);
 
-// Frames for the renderer: `count` frames at `fps`, at most w × h pixels each.
-export async function extractFrames(asset, fps, w, h, onFrame = () => {}) {
+// Frames for the renderer at `fps`, at most w × h pixels each, from frame `from` up to time `to`.
+export async function extractFrames(asset, fps, w, h, onFrame = () => {}, from = 0, to = null) {
   const v = await openVideo(videoURL(asset), asset.name || 'a video clip');
   try {
     const k = Math.min(1, w / v.videoWidth, h / v.videoHeight);
     const rw = Math.max(2, Math.round(v.videoWidth * k)), rh = Math.max(2, Math.round(v.videoHeight * k));
     const dur = asset.dur || v.duration;
-    const count = Math.max(1, Math.ceil(dur * fps));
+    const count = Math.max(1, Math.ceil(Math.min(dur, to ?? dur) * fps) - from);
     const frames = [];
     for (let i = 0; i < count; i++) {
-      await seekTo(v, Math.min(v.duration - 0.001, i / fps + 0.001));
+      await seekTo(v, Math.min(v.duration - 0.001, (from + i) / fps + 0.001));
       frames.push(await createImageBitmap(v, { resizeWidth: rw, resizeHeight: rh, resizeQuality: 'medium' }));
       onFrame(i + 1, count);
     }
@@ -145,6 +145,8 @@ export class VideoLayer {
           if (!a.posterless || v.readyState < 2) return;
           try { a.poster = grabPoster(v); delete a.posterless; this.onPoster(a); } catch {}
         }, 150), { once: true });
+        // A trimmed clip stops at its end point and holds that frame.
+        v.addEventListener('timeupdate', () => { const end = v._o?.trimOut; if (end != null && v.currentTime >= end - 0.03) { v.pause(); v.currentTime = end; } });
         host.appendChild(v);
         this.els.set(o.id, v);
         fresh = new Set([...fresh, o.id]);
@@ -154,9 +156,10 @@ export class VideoLayer {
       const cx = ctm.a * o.x + ctm.e - hr.left, cy = ctm.d * -o.y + ctm.f - hr.top;
       Object.assign(v.style, { left: cx + 'px', top: cy + 'px', width: o.w * s * px + 'px', height: o.h * s * px + 'px',
         transform: `translate(-50%, -50%) rotate(${-(o.rot || 0)}deg)`, opacity: o.opacity ?? 1 });
+      v._o = o;
       v.volume = Math.max(0, Math.min(1, o.vol ?? 1));
       v.muted = this.muted;
-      if (fresh.has(o.id)) { v.currentTime = 0; v.play().catch(() => { v.muted = true; v.play().catch(() => {}); }); /* iOS may only allow it muted */ v.animate?.([{ opacity: 0 }, { opacity: o.opacity ?? 1 }], { duration: 500 }); }
+      if (fresh.has(o.id)) { v.currentTime = o.trimIn || 0; v.play().catch(() => { v.muted = true; v.play().catch(() => {}); }); /* iOS may only allow it muted */ v.animate?.([{ opacity: 0 }, { opacity: o.opacity ?? 1 }], { duration: 500 }); }
     }
     for (const [id, v] of this.els) if (!keep.has(id)) { v.pause(); v.remove(); this.els.delete(id); }
   }

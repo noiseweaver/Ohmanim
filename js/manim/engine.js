@@ -53,10 +53,10 @@ export async function renderTex(keys) {
 // Renders `code` and resolves with {url, blob, markers, duration, scene}.
 // onProgress receives worker messages (status, preview) while it runs.
 // assets: image files the code loads, [{name, type, bytes}]; audio: {name: Float32Array} narration PCM.
-// videos: {file name: ImageBitmap[]} frames of each clip at fps; they are handed to the worker.
+// videos: {file name: {start, frames}} frames of each clip at fps from frame `start`; they are handed to the worker.
 export function renderCode(code, { width = 1280, height = 720, fps = 30, assets = [], audio = {}, videos = {} } = {}, onProgress = () => {}) {
   const w = getWorker();
-  w.postMessage({ type: 'videos', videos }, Object.values(videos).flat());
+  w.postMessage({ type: 'videos', videos }, Object.values(videos).flatMap((v) => v.frames));
   return new Promise((resolve, reject) => {
     let rounds = 0;
     const off = onEngine(async (m) => {

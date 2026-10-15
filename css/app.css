@@ -465,3 +465,28 @@ button.slidetheme svg { flex: none; }
 .clipvid { position: absolute; object-fit: fill; pointer-events: none; z-index: 1; background: #000; }
 /* File pickers opened from buttons. Kept in the layout (not display:none) because some mobile browsers won't open a hidden one. */
 .filepick { position: fixed; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+/* Audio editor */
+#audDlg { width: min(720px, 94vw); max-height: 94vh; overflow: auto; }
+#audDlg h2 small { font-weight: 400; color: var(--muted); }
+.audwave { background: var(--field); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px; }
+#audWave { display: block; width: 100%; height: 120px; touch-action: none; cursor: ew-resize; }
+.audgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 12px; }
+.audgrid .wide, .audgrid .help { grid-column: 1 / -1; }
+.audgrid .wide2 { grid-column: span 2; }
+.audgrid .fld input[type=range], .audgrid select { width: 100%; }
+.audvoice { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 10px; display: grid; gap: 8px; }
+.audvoice h3 { margin: 0; font-size: 14px; }
+.audgrid .fld input[type=number] { width: 100%; }
+#audDlg .chk, #audDlg .audgrid .chk { display: flex; gap: 10px; align-items: flex-start; color: var(--muted); font-size: 12px; line-height: 1.4; }
+#audDlg .chk b { color: var(--text); font-size: 13px; }
+#audDlg .chk input { margin-top: 3px; }
+#trimDlg { width: min(720px, 94vw); }
+#trimDlg h2 small { font-weight: 400; color: var(--muted); }
+#trimVid { display: block; width: 100%; max-height: 50vh; background: #000; border-radius: var(--r-sm); }
+.trimbar { display: flex; gap: 10px; align-items: center; }
+.trimbar span { min-width: 4.5em; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+#trimPos { flex: 1; background: linear-gradient(90deg, var(--line) var(--a, 0%), var(--accent) var(--a, 0%), var(--accent) var(--b, 100%), var(--line) var(--b, 100%)); height: 6px; border-radius: 3px; appearance: none; -webkit-appearance: none; }
+#trimPos::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--text); }
+#trimPos::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--text); border: 0; }
+@media (max-width: 560px) { .audgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

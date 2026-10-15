@@ -2,8 +2,8 @@
 // Canvas 2D context. Works in windows and workers (OffscreenCanvas).
 export const FRAME_W = 14.222222222222221, FRAME_H = 8;
 
-// images: bitmaps for op 13, in the order of manimweb.IMAGES; videos: a list of frame
-// bitmaps per clip for op 14, in the order of manimweb.VIDEOS.
+// images: bitmaps for op 13, in the order of manimweb.IMAGES; videos: {start, frames} per clip
+// for op 14, in the order of manimweb.VIDEOS, where frames[0] is frame `start` of the file.
 export function drawOps(ctx, ops, width, height, bg, images = [], videos = []) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
@@ -52,7 +52,7 @@ export function drawOps(ctx, ops, width, height, bg, images = [], videos = []) {
         const clip = videos[ops[i]], [ulx, uly, urx, ury, dlx, dly, a, f] = [1, 2, 3, 4, 5, 6, 7, 8].map((k) => ops[i + k]);
         i += 9;
         // Past the end a clip holds its last frame.
-        const img = clip?.[Math.max(0, Math.min(clip.length - 1, f))];
+        const fr = clip?.frames || [], img = fr[Math.max(0, Math.min(fr.length - 1, f - (clip?.start || 0)))];
         if (!img) break;
         ctx.save();
         ctx.globalAlpha = a;

@@ -2,7 +2,7 @@
 // slide timeline (beats → phases → animations) shared by the preview player
 // and the Manim exporter.
 import { REG, TAU } from './components.js';
-import { assetURL } from './backgrounds.js';
+import { assetURL, clipRange } from './backgrounds.js';
 
 export const FRAME_W = 14.222222, FRAME_H = 8;
 export const SW_UNIT = 0.01;   // Manim: stroke_width 4 ≈ 0.04 scene units
@@ -288,7 +288,7 @@ export function timeline(project) {
       if (s.enter.length) phases.push(s.enter);
       if (s.emph.length) phases.push(s.emph);
       // Video clips that enter on this click play to their end before the next one.
-      const clip = Math.max(0, ...s.enter.filter((a) => a.obj.type === 'video').map((a) => project.assets?.[a.obj.asset]?.dur || 0));
+      const clip = Math.max(0, ...s.enter.filter((a) => a.obj.type === 'video').map((a) => { const r = clipRange(a.obj, project.assets?.[a.obj.asset]); return r[1] - r[0]; }));
       beats.push({ slide: si, step: k, first: i === 0, phases, clip, voice: voice[k] || null, caption: (voice[k] && slide.captions?.[k]) || '', hold: holdOf(project, slide, k), sounds: sounds[k] || [] });
     });
   });

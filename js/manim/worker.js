@@ -192,7 +192,7 @@ async function loadFontsFor(code) {
 
 // Frames of the lesson's video clips, sent (transferred) before a render: {file name: ImageBitmap[]}.
 let clipFrames = {};
-function closeVideos() { for (const list of Object.values(clipFrames)) for (const b of list) b.close?.(); clipFrames = {}; }
+function closeVideos() { for (const c of Object.values(clipFrames)) for (const b of c.frames || []) b.close?.(); clipFrames = {}; }
 
 self.onmessage = async (e) => {
   const m = e.data;

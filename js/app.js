@@ -6,10 +6,13 @@ import { demoProject } from './demo.js';
 import { renderCode, warmUp, onEngine, engineReady } from './manim/engine.js';
 import { icon, installIcons } from './icons.js';
 import { pop, flash, appear, flip, shake } from './motion.js';
-import { bgOf, bgSVG, bgKey, isLight, BG_DEFAULT, FILLS, PATTERNS, FITS, PRESETS, importImage, usedAssets, assetFile, assetBytes, mediaFile, clipSoundFile } from './backgrounds.js';
+import { bgOf, bgSVG, bgKey, isLight, BG_DEFAULT, FILLS, PATTERNS, FITS, PRESETS, importImage, usedAssets, assetFile, assetBytes, mediaFile, clipRange, clipSoundUses } from './backgrounds.js';
 import { saveAssets, loadAssets, pruneAssets } from './store.js';
 import { importVideo, extractFrames, VideoLayer } from './video.js';
-import { startRecording, releaseMic, playClip, stopClip, decode, toWav, fmtDur, importAudio, playSound, stopSounds, startMusic, stopMusic } from './voice.js';
+import { editAudio } from './audioedit.js';
+import { startRecording, releaseMic, playClip, stopClip, decode, toWav, fmtDur, importAudio, playSound, stopSounds, startMusic, stopMusic, SAMPLE_RATE } from './voice.js';
+import { wavBytes } from './audiofx.js';
+import { trimVideo } from './trimvideo.js';
 import { THEMES, STYLES, loadLook, saveLook, applyLook, themeSwatch, TEXT_ROLES, applySlideTheme, applyRole, slideSwatch, slidePalette } from './themes.js';
 
 installIcons();
@@ -80,7 +83,12 @@ media.assets = assetPool;
 function attachAssets() {
   Object.assign(assetPool, project.assets || {});
   const a = {};
-  for (const id of usedAssets({ ...project, assets: assetPool })) a[id] = assetPool[id];
+  for (const id of usedAssets({ ...project, assets: assetPool })) {
+    a[id] = assetPool[id];
+    // An edited clip keeps its original so it can be edited again from scratch.
+    const o = assetPool[id].orig;
+    if (o && assetPool[o]) a[o] = assetPool[o];
+  }
   project.assets = a;
 }
 
@@ -771,8 +779,9 @@ function renderInspector() {
   if (o.type === 'image') h += `<div class="btnrow"><button data-act="replacePic">${icon('image')}Replace picture</button></div>`;
   if (o.type === 'video') {
     const a = project.assets?.[o.asset];
-    h += `<div class="btnrow"><button data-act="replacePic">${icon('film')}Replace clip</button></div>` +
-      (a ? `<div class="help">${fmtDur(a.dur)} clip${a.hasAudio ? ' with sound' : ', no sound'}. It plays on its click, and that click lasts until it ends.</div>` : '');
+    const r = a && clipRange(o, a);
+    h += `<div class="btnrow"><button data-act="replacePic">${icon('film')}Replace clip</button>${a ? `<button data-act="trimClip">${icon('scissors')}Trim</button>` : ''}</div>` +
+      (a ? `<div class="help">${r.full ? fmtDur(a.dur) + ' clip' : `Plays ${fmtDur(r[1] - r[0])} of a ${fmtDur(a.dur)} clip`}${a.hasAudio ? ' with sound' : ', no sound'}. It plays on its click, and that click lasts until it ends.</div>` : '');
   }
   if (o.type !== 'group' && o.type !== 'image' && o.type !== 'video') h += `<div class="pair">${field('Colour', 'color', 'color', o.color)}${d.fillable ? field('Fill', 'fill', 'color', o.fill) : ''}</div>`;
   if (d.fillable) h += field('Fill opacity', 'fo', 'range', o.fo, { step: 0.05, min: 0 }).replace('type="range"', 'type="range" max="1"');
@@ -837,6 +846,7 @@ $('#inspector').addEventListener('click', (e) => {
   const ma = e.target.closest('[data-musicact]')?.dataset.musicact;
   if (ma === 'add' || ma === 'replace') return pickAudio({ music: true });
   if (ma === 'play') { const b = e.target.closest('[data-musicact]'); if (b.classList.toggle('on')) { startMusic({ ...project.music, duck: 0 }, project.assets?.[project.music.asset]); } else stopMusic(); return; }
+  if (ma === 'edit') return editAudioAsset(project.music.asset, (nid) => { project.music.asset = nid; });
   if (ma === 'del') { stopMusic(); edit(() => { project.music = null; }); renderInspector(); return; }
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (act) objAction(act);
@@ -848,6 +858,11 @@ function objAction(act) {
   const rot = (q, back) => { if (REG[q.type].ends) { [q.dx, q.dy] = back ? [q.dy, -q.dx] : [-q.dy, q.dx]; } else q.rot = ((q.rot || 0) + (back ? 270 : 90)) % 360; };
   if (act === 'saveShape') return openSaveShape();
   if (act === 'replacePic') return pickPicture(null, null, o);
+  if (act === 'trimClip') {
+    const a = project.assets?.[o.asset];
+    if (a) trimVideo(o, a).then((r) => { if (r) edit(() => { for (const k of ['trimIn', 'trimOut']) { if (r[k] == null) delete o[k]; else o[k] = r[k]; } }); renderInspector(); });
+    return;
+  }
   if (act === 'tgroup') return groupTracks();
   if (act === 'del') edit(() => { slide().objects = slide().objects.filter((q) => !isSel(q.id)); setSelection([]); });
   if (act === 'rotate' || act === 'rotateBack') {
@@ -986,11 +1001,13 @@ const currentCode = () => project.customCode || generatedCode('slides');
 
 // Background image files the code loads: [{name, type, bytes}].
 function renderAssets() { return usedAssets(project, 'image').map((id) => { const a = project.assets[id]; return { name: assetFile(id, a), type: a.type, bytes: assetBytes(a).buffer }; }); }
+// The part of decoded PCM a trimmed clip plays.
+const sliceRange = (pcm, r) => (r.full ? pcm : pcm.slice(Math.round(r[0] * SAMPLE_RATE), Math.round(r[1] * SAMPLE_RATE)));
 // Narration as PCM for the in-browser renderer, keyed by the file name the code uses.
 async function narrationPCM() {
   const out = {};
   for (const id of usedAssets(project, 'audio')) { try { out[mediaFile(id, project.assets[id])] = await decode(project.assets[id]); } catch {} }
-  for (const id of usedAssets(project, 'video')) if (project.assets[id].hasAudio) { try { out[clipSoundFile(id)] = await decode(project.assets[id]); } catch {} }
+  for (const u of clipSoundUses(project)) { try { out[u.file] = sliceRange(await decode(project.assets[u.id]), u.range); } catch {} }
   return out;
 }
 // Frames of every clip for the renderer, keyed by the clip's file name. Each clip is pulled out
@@ -999,18 +1016,23 @@ const FRAME_BUDGET = 700e6; // bytes of decoded frames
 async function clipFrames(width, fps, onStatus) {
   const ids = usedAssets(project, 'video');
   if (!ids.length) return {};
-  const pxPerUnit = width / FRAME_W, size = {};
+  const pxPerUnit = width / FRAME_W, size = {}, span = {};
   const visit = (list, s = 1) => list.forEach((o) => {
-    if (o.type === 'video' && ids.includes(o.asset)) { const k = s * (o.scale ?? 1); const z = size[o.asset] ||= [0, 0]; z[0] = Math.max(z[0], o.w * k * pxPerUnit); z[1] = Math.max(z[1], o.h * k * pxPerUnit); }
+    if (o.type === 'video' && ids.includes(o.asset)) {
+      const k = s * (o.scale ?? 1); const z = size[o.asset] ||= [0, 0]; z[0] = Math.max(z[0], o.w * k * pxPerUnit); z[1] = Math.max(z[1], o.h * k * pxPerUnit);
+      const r = clipRange(o, project.assets[o.asset]), sp = span[o.asset] ||= [Infinity, 0]; sp[0] = Math.min(sp[0], r[0]); sp[1] = Math.max(sp[1], r[1]);
+    }
     if (o.children) visit(o.children, s * (o.scale ?? 1));
   });
   project.slides.forEach((sl) => visit(sl.objects));
-  const cost = ids.reduce((t, id) => t + size[id][0] * size[id][1] * 4 * Math.ceil(project.assets[id].dur * fps), 0);
+  const cost = ids.reduce((t, id) => t + size[id][0] * size[id][1] * 4 * Math.ceil((span[id][1] - span[id][0]) * fps + 1), 0);
   const shrink = Math.min(1, Math.sqrt(FRAME_BUDGET / Math.max(1, cost)));
   const out = {};
   for (const id of ids) {
     const a = project.assets[id];
-    out[mediaFile(id, a)] = await extractFrames(a, fps, size[id][0] * shrink, size[id][1] * shrink, (i, n) => { if (i % 10 === 0 || i === n) onStatus(`Preparing ${picName(a) || 'video clip'}: frame ${i} of ${n}`); });
+    const start = Math.max(0, Math.round(span[id][0] * fps));
+    const frames = await extractFrames(a, fps, size[id][0] * shrink, size[id][1] * shrink, (i, n) => { if (i % 10 === 0 || i === n) onStatus(`Preparing ${picName(a) || 'video clip'}: frame ${i} of ${n}`); }, start, span[id][1]);
+    out[mediaFile(id, a)] = { start, frames };
   }
   return out;
 }
@@ -1020,11 +1042,14 @@ $('#dlAssets').addEventListener('click', async () => {
     const a = project.assets[id];
     const blob = a.kind === 'audio' ? await toWav(a) : new Blob([assetBytes(a)], { type: a.type });
     setTimeout(() => download(blob, mediaFile(id, a)), i++ * 300);
-    if (a.kind === 'video' && a.hasAudio) { const wav = await toWav(a); setTimeout(() => download(wav, clipSoundFile(id)), i++ * 300); }
+  }
+  for (const u of clipSoundUses(project)) {
+    const pcm = sliceRange(await decode(project.assets[u.id]), u.range);
+    setTimeout(() => download(new Blob([wavBytes(pcm, SAMPLE_RATE)], { type: 'audio/wav' }), u.file), i++ * 300);
   }
 });
 function openCode() {
-  const n = usedAssets(project).reduce((t, id) => t + (project.assets[id].kind === 'video' && project.assets[id].hasAudio ? 2 : 1), 0);
+  const n = usedAssets(project).length + clipSoundUses(project).length;
   $('#dlAssets').hidden = !n;
   $('#dlAssets').querySelector('span').textContent = n > 1 ? `Download ${n} media files` : 'Download media file';
   $('#code').value = project.customCode || generatedCode(exportMode);
@@ -1522,6 +1547,23 @@ $('#audioFile').addEventListener('change', async (e) => {
   renderTimeline(); renderSlides(); renderInspector();
   toast(target.music ? `${soundName(asset)} plays under the whole lesson` : `Added ${soundName(asset)} (${fmtDur(asset.dur)})`);
 });
+// Open the audio editor on asset `id`; put(newId) swaps the result in wherever the clip is used.
+async function editAudioAsset(id, put) {
+  stopClip(); stopSounds(); stopMusic();
+  let r;
+  try { r = await editAudio(id, { ...project.assets, ...assetPool }); } catch (err) { return toast('This clip could not be opened for editing: ' + err.message); }
+  if (!r) return;
+  edit(() => {
+    let nid = r.restore;
+    if (r.asset) { nid = uid(); assetPool[nid] = r.asset; }
+    project.assets = { ...(project.assets || {}), [nid]: assetPool[nid] };
+    const o = assetPool[nid].orig;
+    if (o && assetPool[o]) project.assets[o] = assetPool[o];
+    put(nid);
+  });
+  renderTimeline(); renderSlides(); renderInspector();
+  toast(r.restore ? 'Back to the original clip' : 'Edited the clip. Undo brings back the previous version.');
+}
 function playSounds(beat) { for (const sd of beat.sounds || []) playSound(project.assets?.[sd.asset], sd.vol ?? 1); }
 function openSoundMenu(k, i, rect) {
   const s = slide(), sd = s.sounds?.[k]?.[i], a = sd && project.assets?.[sd.asset];
@@ -1529,7 +1571,7 @@ function openSoundMenu(k, i, rect) {
   const m = $('#tlMenu');
   m.innerHTML = `<div class="mh">${escapeHTML(soundName(a))} · click ${k} · ${fmtDur(a.dur)}</div><button data-sd="play">${icon('play')}Play</button>` +
     `<div class="holdrow"><span>Volume</span><input id="sndVol" type="range" min="0" max="1" step="0.05" value="${sd.vol ?? 1}" aria-label="Volume"></div>` +
-    `<button data-sd="del">${icon('trash-2')}Remove sound</button><div class="help">Starts with the click. It doesn't make the click longer; give the click a hold time for that.</div>`;
+    `<button data-sd="edit">${icon('sliders-horizontal')}Edit audio…</button><button data-sd="del">${icon('trash-2')}Remove sound</button><div class="help">Starts with the click. It doesn't make the click longer; give the click a hold time for that.</div>`;
   showMenu(rect);
   $('#sndVol').addEventListener('input', (e) => edit(() => { sd.vol = +e.target.value; }, 'sndvol' + s.id + k + i));
   $('#sndVol').addEventListener('change', () => playSound(a, sd.vol));
@@ -1538,6 +1580,7 @@ function openSoundMenu(k, i, rect) {
     if (!v) return;
     if (v === 'play') return playSound(a, sd.vol ?? 1);
     m.hidden = true;
+    if (v === 'edit') editAudioAsset(sd.asset, (nid) => { sd.asset = nid; });
     if (v === 'del') { edit(() => { s.sounds[k].splice(i, 1); if (!s.sounds[k].length) delete s.sounds[k]; compactSteps(); }); renderTimeline(); renderSlides(); }
   };
 }
@@ -1546,7 +1589,7 @@ function musicSection() {
   if (!a) return `<h4>Music</h4><div class="btnrow"><button data-musicact="add">${icon('volume-2')}Add background music</button></div><div class="help">Loops under the whole video, quieter while narration plays.</div>`;
   return `<h4>Music</h4><div class="musicrow">${icon('volume-2')}<span title="${escapeHTML(a.name || '')}">${escapeHTML(soundName(a))}</span><small>${fmtDur(a.dur)}</small></div>` +
     `<div class="sec" data-scope="music">${field('Volume', 'vol', 'range', mu.vol ?? 0.3, { step: 0.05, min: 0, max: 1 })}${field('Quieter under narration', 'duck', 'bool', !!mu.duck)}</div>` +
-    `<div class="btnrow"><button data-musicact="play">${icon('play')}Listen</button><button data-musicact="replace">${icon('upload')}Replace</button><button data-musicact="del">${icon('trash-2')}Remove</button></div>`;
+    `<div class="btnrow"><button data-musicact="play">${icon('play')}Listen</button><button data-musicact="edit">${icon('sliders-horizontal')}Edit</button><button data-musicact="replace">${icon('upload')}Replace</button><button data-musicact="del">${icon('trash-2')}Remove</button></div>`;
 }
 
 // ---- narration ---------------------------------------------------------------------
@@ -1589,7 +1632,7 @@ function openVoiceMenu(k, rect) {
   const s = slide(), a = project.assets?.[s.voice?.[k]];
   if (!a) return;
   const m = $('#tlMenu');
-  m.innerHTML = `<div class="mh">Narration · click ${k} · ${fmtDur(a.dur)}</div><button data-v="play">${icon('play')}Play</button><button data-v="again">${icon('mic')}Record again</button><button data-v="file">${icon('upload')}Use a file instead</button><button data-v="del">${icon('trash-2')}Remove narration</button>` +
+  m.innerHTML = `<div class="mh">Narration · click ${k} · ${fmtDur(a.dur)}</div><button data-v="play">${icon('play')}Play</button><button data-v="again">${icon('mic')}Record again</button><button data-v="edit">${icon('sliders-horizontal')}Edit audio…</button><button data-v="file">${icon('upload')}Use a file instead</button><button data-v="del">${icon('trash-2')}Remove narration</button>` +
     `<hr><div class="mh">Caption</div><textarea id="capText" rows="3" placeholder="Type what this clip says" aria-label="Caption for click ${k}">${escapeHTML(s.captions?.[k] || '')}</textarea>` +
     '<div class="help">Exported with the video as a WebVTT or SRT file, not burned in.</div>';
   showMenu(rect);
@@ -1606,6 +1649,7 @@ function openVoiceMenu(k, rect) {
     if (v === 'play') playClip(a);
     if (v === 'again') recordClip(k);
     if (v === 'file') pickAudio({ voice: k });
+    if (v === 'edit') editAudioAsset(s.voice[k], (nid) => { s.voice[k] = nid; });
     if (v === 'del') { stopClip(); edit(() => { delete s.voice[k]; if (s.captions) delete s.captions[k]; compactSteps(); }); renderTimeline(); renderSlides(); }
   };
 }

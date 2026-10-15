@@ -112,7 +112,9 @@ export function objectPy(o) {
 }
 
 const ENTER = {
-  Create: (m) => `Create(${m})`, FadeIn: (m) => `FadeIn(${m})`, Write: (m) => `Write(${m})`,
+  // lag_ratio=0 draws every part at once, like the editor's preview. Manim's default draws parts one
+  // after another, so a graph's curve (its last part) only showed up at the very end.
+  Create: (m) => `Create(${m}, lag_ratio=0)`, FadeIn: (m) => `FadeIn(${m})`, Write: (m) => `Write(${m})`,
   GrowFromCenter: (m) => `GrowFromCenter(${m})`, DrawBorderThenFill: (m) => `DrawBorderThenFill(${m})`,
 };
 const EMPH = {

@@ -126,10 +126,16 @@ from pathlib import Path as _VPath
 _VHERE = _VPath(__file__).parent if "__file__" in globals() else _VPath(".")
 
 
-def _say(scene, name):
-    """Start a narration clip now; returns the time it started."""
+_CAPS = []
+
+
+def _say(scene, name, caps=()):
+    """Start a narration clip now; returns the time it started. caps are its captions
+    as (start, end, text) in seconds from the start of the clip."""
     scene.add_sound(str(_VHERE / name))
-    return scene.renderer.time
+    t0 = scene.renderer.time
+    _CAPS.extend((t0 + a, t0 + b, s) for a, b, s in caps)
+    return t0
 
 
 def _hold(scene, t0, dur):
@@ -138,6 +144,52 @@ def _hold(scene, t0, dur):
     if left > 1 / config.frame_rate:
         scene.wait(left)
 `;
+
+// Captions go next to the video as WebVTT and SRT, timed from where each clip starts.
+const CAPTION_HELPERS = `
+
+def _write_captions(name):
+    """Write the narration captions as name.vtt and name.srt next to this file."""
+    def ts(t, sep):
+        ms = int(round(t * 1000))
+        h, ms = divmod(ms, 3600000)
+        m, ms = divmod(ms, 60000)
+        s, ms = divmod(ms, 1000)
+        return f"{h:02}:{m:02}:{s:02}{sep}{ms:03}"
+    esc = lambda s: s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    vtt, srt = ["WEBVTT", ""], []
+    for i, (a, b, s) in enumerate(_CAPS, 1):
+        vtt += [f"{ts(a, '.')} --> {ts(b, '.')}", esc(s), ""]
+        srt += [str(i), f"{ts(a, ',')} --> {ts(b, ',')}", s, ""]
+    try:
+        (_VHERE / f"{name}.vtt").write_text("\\n".join(vtt), encoding="utf-8")
+        (_VHERE / f"{name}.srt").write_text("\\n".join(srt), encoding="utf-8")
+    except OSError as e:
+        print("Could not write captions:", e)
+`;
+
+// Split a caption into cues of at most two 42-character lines, timed by length across the clip.
+export function captionCues(text, dur) {
+  const words = String(text || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  if (!words.length || !(dur > 0)) return [];
+  const lines = [];
+  let line = '';
+  for (const w of words) {
+    if (line && (line + ' ' + w).length > 42) { lines.push(line); line = w; } else line = line ? line + ' ' + w : w;
+    // A sentence end is a good place to start a new line.
+    if (/[.!?]$/.test(line) && line.length > 20) { lines.push(line); line = ''; }
+  }
+  if (line) lines.push(line);
+  const cues = [];
+  for (let i = 0; i < lines.length; i += 2) cues.push(lines.slice(i, i + 2).join('\n'));
+  const total = cues.reduce((t, c) => t + c.length, 0);
+  let t = 0;
+  return cues.map((c, i) => {
+    const a = t;
+    t = i === cues.length - 1 ? dur : t + (dur * c.length) / total;
+    return [Math.round(a * 1000) / 1000, Math.round(t * 1000) / 1000, c];
+  });
+}
 
 export function exportPython(project, { mode = 'slides' } = {}) {
   fonts.lesson = project.font || DEFAULT_FONT;
@@ -161,6 +213,8 @@ export function exportPython(project, { mode = 'slides' } = {}) {
   if (media.length) L.push(`\nPut these files next to this file (Download media in Manim Visual): ${media.join(', ')}`);
   const voiced = beats.some((b) => b.voice && project.assets?.[b.voice]);
   if (voiced) L.push('Narration uses self.add_sound; rendering it on a computer needs ffmpeg.');
+  const captioned = beats.some((b) => b.caption && b.voice && project.assets?.[b.voice]);
+  if (captioned) L.push(`Captions are written next to this file as ${cls}.vtt and ${cls}.srt, timed to the video.`);
   // Backgrounds: a plain colour shared by every slide is just the camera colour. Anything
   // else is a full-frame Group behind everything, cross-faded when a slide changes it.
   const bgs = project.slides.map((s) => bgOf(project, s));
@@ -172,6 +226,7 @@ export function exportPython(project, { mode = 'slides' } = {}) {
   L.push(HELPERS);
   if (fancy) L.push(BG_HELPERS);
   if (voiced) L.push(VOICE_HELPERS);
+  if (captioned) L.push(CAPTION_HELPERS);
   L.push('');
   L.push(`class ${cls}(${mode === 'slides' ? 'Slide' : 'Scene'}):`);
   w('def construct(self):', 1);
@@ -204,7 +259,10 @@ export function exportPython(project, { mode = 'slides' } = {}) {
       bgVar = v; bgAt = keys[beat.slide];
     }
     const clip = beat.voice && project.assets?.[beat.voice];
-    if (clip) w(`_v = _say(self, ${str(mediaFile(beat.voice, clip))})`);
+    if (clip) {
+      const caps = captionCues(beat.caption, clip.dur).map(([a, b, t]) => `(${n(a)}, ${n(b)}, ${str(t)})`);
+      w(`_v = _say(self, ${str(mediaFile(beat.voice, clip))}${caps.length ? `, [${caps.join(', ')}]` : ''})`);
+    }
     for (const phase of beat.phases) {
       const anims = [], after = [], adds = [];
       for (const a of phase) {
@@ -231,6 +289,7 @@ export function exportPython(project, { mode = 'slides' } = {}) {
     if (clip) w(`_hold(self, _v, ${n(clip.dur)})`);
   });
   w('');
+  if (captioned) w(`_write_captions(${str(cls)})`);
   w('self.next_slide()' + (mode === 'slides' ? '' : ''));
   return L.join('\n') + '\n';
 }

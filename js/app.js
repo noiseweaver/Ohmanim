@@ -957,8 +957,19 @@ function showRenderResult(on) {
   $('#renderPreview').hidden = on;
   $('#dlVideo').hidden = !on;
   $('#presentVideoBtn').hidden = !on;
+  $('#dlVtt').hidden = !(on && lastRender.captions?.vtt);
+  $('#dlSrt').hidden = !(on && lastRender.captions?.srt);
   if (on) {
-    if ($('#renderVideo').src !== lastRender.url) $('#renderVideo').src = lastRender.url;
+    if ($('#renderVideo').src !== lastRender.url) {
+      $('#renderVideo').src = lastRender.url;
+      // Show the captions on the preview, as a player would; they are not in the video itself.
+      $('#renderVideo').querySelector('track')?.remove();
+      if (lastRender.captions?.vtt) {
+        const t = document.createElement('track');
+        Object.assign(t, { kind: 'captions', label: 'Captions', srclang: 'en', default: true, src: lastRender.vttURL ||= URL.createObjectURL(new Blob([lastRender.captions.vtt], { type: 'text/vtt' })) });
+        $('#renderVideo').append(t);
+      }
+    }
     $('#renderStatus').textContent = `Rendered ${lastRender.duration.toFixed(1)} s of video with ${lastRender.markers.length} click${lastRender.markers.length === 1 ? '' : 's'}.`;
   }
 }
@@ -979,7 +990,7 @@ async function startRender() {
         $('#renderStatus').textContent = `Rendering with Manim… ${m.time.toFixed(1)} s of video`;
       }
     });
-    if (lastRender) URL.revokeObjectURL(lastRender.url);
+    if (lastRender) { URL.revokeObjectURL(lastRender.url); if (lastRender.vttURL) URL.revokeObjectURL(lastRender.vttURL); }
     lastRender = { ...res, code: renderCodeText };
     showRenderResult(true);
     $('#renderStatus').textContent += ` Took ${((performance.now() - t0) / 1000).toFixed(0)} s.`;
@@ -994,6 +1005,9 @@ async function startRender() {
 }
 $('#startRender').addEventListener('click', startRender);
 $('#dlVideo').addEventListener('click', () => download(lastRender.blob, slug(project.title) + '.mp4'));
+// Caption files share the video's name so players pick them up next to it.
+$('#dlVtt').addEventListener('click', () => download(new Blob([lastRender.captions.vtt], { type: 'text/vtt' }), slug(project.title) + '.vtt'));
+$('#dlSrt').addEventListener('click', () => download(new Blob([lastRender.captions.srt], { type: 'application/x-subrip' }), slug(project.title) + '.srt'));
 $('#presentVideoBtn').addEventListener('click', () => { $('#renderDlg').close(); presenter.open(0, true); });
 onEngine((m) => { if (m.type === 'status' && !rendering && $('#renderDlg').open) $('#renderStatus').textContent = m.text; if (m.type === 'ready' && !rendering && $('#renderDlg').open && !(lastRender && lastRender.code === renderCodeText)) $('#renderStatus').textContent = 'Manim is loaded. Ready to render.'; });
 
@@ -1183,7 +1197,7 @@ function renderTimeline() {
     const live = recording && recording.slide === s.id && recording.step === k;
     h += `<div class="tl-cell tl-voice" data-step="${k}">` + (live
       ? `<button class="tl-rec live" data-recstop title="Stop recording"><i class="lvl"></i>${icon('square')}<span>0.0 s</span></button>`
-      : a ? `<span class="vblk" data-voice="${k}" title="Narration for click ${k}: click for options"><i style="width:${Math.min(100, 12 + a.dur * 8)}%"></i>${icon('volume-2')}${fmtDur(a.dur)}</span>`
+      : a ? `<span class="vblk" data-voice="${k}" title="${s.captions?.[k] ? escapeHTML(s.captions[k]) + '\n\n' : ''}Narration for click ${k}: click to play, re-record or add a caption"><i style="width:${Math.min(100, 12 + a.dur * 8)}%"></i>${icon('volume-2')}${fmtDur(a.dur)}${s.captions?.[k] ? '<b class="cc">CC</b>' : ''}</span>`
         : `<button class="tl-rec" data-rec="${k}" title="Record narration for ${k <= maxStep ? 'click ' + k : 'a new click'}" aria-label="Record narration for click ${k}">${icon('mic')}<span>Record</span></button>`) + '</div>';
   }
   const row = (o, gone, inGroup) => {
@@ -1282,6 +1296,7 @@ function compactSteps() {
   }
   if (s.outSteps) for (const id in s.outSteps) s.outSteps[id] = m(s.outSteps[id]);
   if (s.voice) s.voice = Object.fromEntries(vk.map((k) => [m(k), s.voice[k]]));
+  if (s.captions) s.captions = Object.fromEntries(Object.entries(s.captions).filter(([k, t]) => t && vk.includes(+k)).map(([k, t]) => [m(+k), t]));
 }
 
 function moveBlock(b, k) {
@@ -1348,15 +1363,23 @@ function openVoiceMenu(k, rect) {
   const s = slide(), a = project.assets?.[s.voice?.[k]];
   if (!a) return;
   const m = $('#tlMenu');
-  m.innerHTML = `<div class="mh">Narration · click ${k} · ${fmtDur(a.dur)}</div><button data-v="play">${icon('play')}Play</button><button data-v="again">${icon('mic')}Record again</button><button data-v="del">${icon('trash-2')}Remove narration</button>`;
+  m.innerHTML = `<div class="mh">Narration · click ${k} · ${fmtDur(a.dur)}</div><button data-v="play">${icon('play')}Play</button><button data-v="again">${icon('mic')}Record again</button><button data-v="del">${icon('trash-2')}Remove narration</button>` +
+    `<hr><div class="mh">Caption</div><textarea id="capText" rows="3" placeholder="Type what this clip says" aria-label="Caption for click ${k}">${escapeHTML(s.captions?.[k] || '')}</textarea>` +
+    '<div class="help">Exported with the video as a WebVTT or SRT file, not burned in.</div>';
   showMenu(rect);
+  $('#capText').addEventListener('input', (e) => {
+    const t = e.target.value;
+    edit(() => { s.captions ||= {}; if (t.trim()) s.captions[k] = t; else delete s.captions[k]; }, 'caption' + s.id + k);
+  });
+  $('#capText').addEventListener('change', () => renderTimeline());
+  $('#capText').addEventListener('keydown', (e) => { if (e.key === 'Escape') { m.hidden = true; renderTimeline(); } });
   m.onclick = (e) => {
     const v = e.target.closest('[data-v]')?.dataset.v;
     if (!v) return;
     m.hidden = true;
     if (v === 'play') playClip(a);
     if (v === 'again') recordClip(k);
-    if (v === 'del') { stopClip(); edit(() => { delete s.voice[k]; compactSteps(); }); renderTimeline(); renderSlides(); }
+    if (v === 'del') { stopClip(); edit(() => { delete s.voice[k]; if (s.captions) delete s.captions[k]; compactSteps(); }); renderTimeline(); renderSlides(); }
   };
 }
 // Record a whole voiceover: present from this slide and talk; every click starts the next clip.

@@ -61,6 +61,9 @@ async function render({ code, width, height, fps, tex, assets = [], audio = {} }
   if (!pyodide) await (booting ||= boot());
   const enc = await new FrameEncoder(width, height, fps).init({ withAudio: Object.keys(audio).length > 0 });
   const sounds = []; // [{name, time}]
+  // The scene writes its captions as .vtt and .srt files; clear old ones first.
+  const cwd = pyodide.FS.cwd(), isCaption = (f) => /\.(vtt|srt)$/.test(f);
+  for (const f of pyodide.FS.readdir(cwd).filter(isCaption)) pyodide.FS.unlink(cwd + '/' + f);
   // Image files (backgrounds) go next to the scene for Manim, and stay here as bitmaps to draw.
   const names = [];
   for (const a of assets) {
@@ -127,7 +130,9 @@ _res
     }
   } else if (heard.length) status('This browser cannot encode audio, so the video has no narration.');
   const out = await enc.finish(pcm);
-  post({ type: 'done', ...out, mime: 'video/mp4', scene: result.scene, codec: enc.codec, audio: !!pcm }, [out.mp4]);
+  const captions = {};
+  for (const f of pyodide.FS.readdir(cwd).filter(isCaption)) captions[f.slice(-3)] = pyodide.FS.readFile(cwd + '/' + f, { encoding: 'utf8' });
+  post({ type: 'done', ...out, captions, mime: 'video/mp4', scene: result.scene, codec: enc.codec, audio: !!pcm }, [out.mp4]);
 }
 
 // Copy the TTFs a scene names (plus DejaVu Sans, the default and fallback) into Python's filesystem.

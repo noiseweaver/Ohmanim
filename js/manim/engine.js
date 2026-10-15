@@ -66,7 +66,7 @@ export function renderCode(code, { width = 1280, height = 720, fps = 30, assets 
       } else if (m.type === 'done') {
         off();
         const blob = new Blob([m.mp4], { type: m.mime });
-        resolve({ blob, url: URL.createObjectURL(blob), markers: m.markers, duration: m.duration, scene: m.scene, frames: m.frames });
+        resolve({ blob, url: URL.createObjectURL(blob), markers: m.markers, duration: m.duration, scene: m.scene, frames: m.frames, captions: m.captions || {} });
       } else if (m.type === 'error') {
         off(); reject(new Error(m.message));
       } else onProgress(m);

@@ -416,6 +416,8 @@ button.slidetheme svg { flex: none; }
 .vblk { isolation: isolate; }
 .vblk i { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in srgb, var(--danger) 35%, transparent); z-index: -1; }
 .vblk .ic { width: 12px; height: 12px; position: relative; }
+.vblk .cc { font-size: 9px; font-weight: 700; padding: 0 3px; border: 1px solid currentColor; border-radius: 3px; line-height: 12px; opacity: .8; }
+.menu textarea { margin: 2px 4px 4px; width: 260px; resize: vertical; font: inherit; font-size: 13px; }
 .present-ui .rec { color: #fff; background: #d33; padding: 2px 8px; border-radius: 999px; font-weight: 700; font-size: 11px; letter-spacing: .08em; animation: recpulse 1.2s ease-in-out infinite; }
 .present-ui:has(.rec:not([hidden])) { opacity: 1; }
 @keyframes recpulse { 50% { opacity: .55; } }

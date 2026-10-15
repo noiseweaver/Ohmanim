@@ -2,6 +2,7 @@
 // slide timeline (beats → phases → animations) shared by the preview player
 // and the Manim exporter.
 import { REG, TAU } from './components.js';
+import { assetURL } from './backgrounds.js';
 
 export const FRAME_W = 14.222222, FRAME_H = 8;
 export const SW_UNIT = 0.01;   // Manim: stroke_width 4 ≈ 0.04 scene units
@@ -11,6 +12,8 @@ export const DEFAULT_FONT = 'DejaVu Sans';
 // The lesson-wide font (set by the editor); objects with no font of their own use it.
 export const fonts = { lesson: DEFAULT_FONT };
 export const fontOf = (o) => o.font || fonts.lesson;
+// The lesson's media (pictures), looked up by asset id when drawing. The app points this at its assets.
+export const media = { assets: {} };
 
 const d2r = (d) => (d * Math.PI) / 180;
 
@@ -40,6 +43,7 @@ export function worldPrims(o) {
     return (o.children || []).flatMap(worldPrims).map((p) => {
       if (p.k === 'path') return { ...p, pts: p.pts.map(tf) };
       const [x, y] = tf([p.x, p.y]);
+      if (p.k === 'image') return { ...p, x, y, w: p.w * s, h: p.h * s, rot: (p.rot || 0) + (o.rot || 0) };
       return { ...p, x, y, size: p.size * s, rot: (p.rot || 0) + (o.rot || 0) };
     });
   }
@@ -61,6 +65,8 @@ export function worldPrims(o) {
       const [fill, fo] = fillOf(p.fill);
       const pts = sampleArc(p.cx, p.cy, p.r, 0, TAU); pts.pop();
       out.push({ k: 'path', pts: pts.map(tf), closed: true, stroke, sw, fill, fo });
+    } else if (p.t === 'image') {
+      out.push({ k: 'image', x: o.x, y: o.y, w: p.w * s, h: p.h * s, rot: o.rot || 0, asset: p.asset, opacity: p.opacity });
     } else if (p.t === 'text' || p.t === 'math') {
       const [x, y] = tf([p.x, p.y]);
       out.push({ k: p.t, x, y, text: p.text, size: p.size * s, rot: o.rot || 0, color: o.color, font: fontOf(o), bold: !!o.bold, italic: !!o.italic });
@@ -90,10 +96,16 @@ export function bbox(prims) {
   const add = (x, y) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); };
   for (const p of prims) {
     if (p.k === 'path') p.pts.forEach(([x, y]) => add(x, y));
+    else if (p.k === 'image') imageCorners(p).forEach(([x, y]) => add(x, y));
     else { const { w, h } = textBox(p); add(p.x - w / 2, p.y - h / 2); add(p.x + w / 2, p.y + h / 2); }
   }
   if (x0 === Infinity) return { x0: 0, y0: 0, x1: 0, y1: 0, cx: 0, cy: 0 };
   return { x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 };
+}
+
+function imageCorners(p) {
+  const r = (p.rot || 0) * Math.PI / 180, c = Math.cos(r), sn = Math.sin(r);
+  return [[-1, 1], [1, 1], [1, -1], [-1, -1]].map(([u, v]) => { const x = u * p.w / 2, y = v * p.h / 2; return [p.x + x * c - y * sn, p.y + x * sn + y * c]; });
 }
 
 const polyLen = (pts, closed) => {
@@ -138,6 +150,18 @@ export function primsSVG(prims, opts = {}) {
       }
       out += `<path d="${d}" fill="${p.fill || 'none'}" fill-opacity="${f(fo)}" stroke="${p.stroke}" stroke-width="${f(p.sw * SW_UNIT)}" stroke-linejoin="round" stroke-linecap="round"${extra}/>`;
       if (opts.hit) out += `<path d="${d}" class="hit" fill="${p.fill && p.fo > 0.05 ? 'transparent' : 'none'}" stroke="transparent" stroke-width="0.25"/>`;
+    } else if (p.k === 'image') {
+      if (opts.flash) continue;
+      const op = (p.opacity ?? 1) * (opts.draw != null && opts.draw < 1 ? opts.draw : 1);
+      const a = media.assets?.[p.asset];
+      const rot = p.rot ? ` rotate(${f(-p.rot)})` : '';
+      const box = `x="${f(-p.w / 2)}" y="${f(-p.h / 2)}" width="${f(p.w)}" height="${f(p.h)}"`;
+      out += `<g transform="translate(${f(p.x)} ${f(-p.y)})${rot}"${op < 1 ? ` opacity="${f(op)}"` : ''}>` + (a
+        ? `<image href="${assetURL(a)}" ${box} preserveAspectRatio="none"/>`
+        // No picture yet (or it went missing): a dashed frame with a mountain, so the object stays visible.
+        : `<rect ${box} fill="#80808033" stroke="#808080" stroke-width="0.03" stroke-dasharray="0.15 0.1"/>` +
+          `<path d="M${f(-p.w * 0.3)} ${f(p.h * 0.25)}L${f(-p.w * 0.08)} ${f(-p.h * 0.1)}L${f(p.w * 0.05)} ${f(p.h * 0.08)}L${f(p.w * 0.15)} ${f(-p.h * 0.02)}L${f(p.w * 0.3)} ${f(p.h * 0.25)}Z" fill="#808080"/>`) + '</g>';
+      if (opts.hit) out += `<path class="hit" d="M${imageCorners(p).map(([x, y]) => `${f(x)} ${f(-y)}`).join('L')}Z" fill="transparent"/>`;
     } else {
       const op = opts.draw != null && opts.draw < 1 ? ` opacity="${f(opts.draw)}"` : '';
       if (opts.flash) continue;
@@ -183,7 +207,7 @@ function hex(c) { const m = /^#?([0-9a-f]{6})$/i.exec(c || ''); return m ? [0, 2
 
 export function morphPrims(A, B, t) {
   // Compatible if same prim kinds in the same order; otherwise caller crossfades.
-  if (A.length !== B.length || A.some((p, i) => p.k !== B[i].k || (p.k === 'path' && p.closed !== B[i].closed) || (p.k !== 'path' && p.text !== B[i].text))) return null;
+  if (A.length !== B.length || A.some((p, i) => p.k !== B[i].k || (p.k === 'path' && p.closed !== B[i].closed) || (p.k !== 'path' && p.text !== B[i].text) || p.asset !== B[i].asset)) return null;
   return A.map((a, i) => {
     const b = B[i];
     if (a.k === 'path') {
@@ -192,6 +216,7 @@ export function morphPrims(A, B, t) {
       return { ...b, pts: pa.map((q, j) => [lerp(q[0], pb[j][0], t), lerp(q[1], pb[j][1], t)]), stroke: lerpColor(a.stroke, b.stroke, t),
         fill: a.fill || b.fill ? lerpColor(a.fill || b.fill, b.fill || a.fill, t) : null, fo: lerp(a.fo, b.fo, t), sw: lerp(a.sw, b.sw, t) };
     }
+    if (a.k === 'image') return { ...b, x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), w: lerp(a.w, b.w, t), h: lerp(a.h, b.h, t), rot: lerp(a.rot, b.rot, t), opacity: lerp(a.opacity ?? 1, b.opacity ?? 1, t) };
     return { ...b, x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), size: lerp(a.size, b.size, t), rot: lerp(a.rot, b.rot, t), color: lerpColor(a.color, b.color, t) };
   });
 }

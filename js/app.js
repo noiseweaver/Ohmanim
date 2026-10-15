@@ -1,5 +1,5 @@
 import { REG, CATEGORIES, ENTER_ANIMS, EMPH_ANIMS, makeObject, uid, checkExpr } from './components.js';
-import { worldPrims, primsSVG, objectSVG, bbox, timeline, emphList, fonts, DEFAULT_FONT, FRAME_W, FRAME_H, holdOf, DEFAULT_HOLD } from './render.js';
+import { worldPrims, primsSVG, objectSVG, bbox, timeline, emphList, fonts, media, DEFAULT_FONT, FRAME_W, FRAME_H, holdOf, DEFAULT_HOLD } from './render.js';
 import { Player, applyBeat, stateSVG } from './player.js';
 import { exportPython } from './export.js';
 import { demoProject } from './demo.js';
@@ -75,6 +75,7 @@ function persist() {
 // Background images live in project.assets. Undo snapshots leave them out (they can be
 // large); every image seen this session stays in the pool so undo can bring it back.
 const assetPool = {};
+media.assets = assetPool;
 function attachAssets() {
   Object.assign(assetPool, project.assets || {});
   const a = {};
@@ -321,11 +322,14 @@ function pushUndo(snap) { undoStack.push(snap); redoStack.length = 0; lastCoales
 function lastWireColor() { const w = [...slide().objects].reverse().find((o) => o.type === 'wire'); return w ? w.color : '#ffffff'; }
 
 // drag from palette
-stage.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('text/x-manimvis')) e.preventDefault(); });
+stage.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('text/x-manimvis') || e.dataTransfer.types.includes('Files')) e.preventDefault(); });
 stage.addEventListener('drop', (e) => {
   const key = e.dataTransfer.getData('text/x-manimvis');
   e.preventDefault();
   const [x, y] = svgPoint(e);
+  const files = [...(e.dataTransfer.files || [])].filter((f) => f.type.startsWith('image/'));
+  if (!key && files.length) { addPictures(files, snap(x), snap(y)); return; }
+  if (key === 'image') { pickPicture(snap(x), snap(y)); return; }
   if (key.startsWith('lib:')) addLibraryShape(key.slice(4), snap(x), snap(y));
   else if (REG[key]) addObject(key, snap(x), snap(y));
 });
@@ -349,6 +353,61 @@ function addObject(type, x, y) {
   renderAll();
   appearObj(sel);
 }
+// ---- pictures -------------------------------------------------------------------
+// A picture is an object whose image lives in project.assets, like background images.
+let pictureAt = null;
+function pickPicture(x, y, replace = null) { pictureAt = { x, y, replace }; $('#picFile').click(); }
+$('#picFile').addEventListener('change', (e) => {
+  const files = [...e.target.files];
+  e.target.value = '';
+  const at = pictureAt || {};
+  pictureAt = null;
+  if (files.length) addPictures(files, at.x, at.y, at.replace);
+});
+const picName = (asset) => String(asset.name || '').replace(/\.[a-z0-9]+$/i, '').slice(0, 32);
+// Fit a picture inside 6 × 4 scene units, keeping its shape.
+function pictureSize(asset) { const k = Math.min(6 / asset.w, 4 / asset.h); return [fx(asset.w * k), fx(asset.h * k)]; }
+async function addPictures(files, x, y, replace = null) {
+  const loaded = [];
+  for (const file of files) {
+    try { loaded.push(await importImage(file)); } catch (err) { toast(`${file.name}: ${err.message}`); }
+  }
+  if (!loaded.length) return;
+  const ids = [];
+  edit(() => {
+    const assets = { ...(project.assets || {}) };
+    loaded.forEach((asset, i) => {
+      const id = uid();
+      assetPool[id] = asset; assets[id] = asset;
+      const [w, h] = pictureSize(asset);
+      if (replace && i === 0) {
+        // Keep the old picture's width (or height, for a taller one) so the layout stays put.
+        const k = Math.min(replace.w / w, replace.h / h);
+        Object.assign(replace, { asset: id, w: fx(w * k), h: fx(h * k), name: picName(asset) });
+        ids.push(replace.id);
+        return;
+      }
+      let px = x, py = y;
+      if (px == null) [px, py] = staggered();
+      const o = makeObject('image', { x: px + i * 0.5, y: py - i * 0.5, asset: id, w, h, name: picName(asset) });
+      slide().objects.push(o);
+      ids.push(o.id);
+    });
+    project.assets = assets;
+    setSelection(ids);
+  });
+  renderAll();
+  if (!replace) ids.forEach(appearObj);
+}
+// Paste a copied image (a screenshot, an image copied in a browser) as a picture.
+document.addEventListener('paste', (e) => {
+  if (e.target.closest?.('input, textarea, [contenteditable]')) return;
+  const files = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith('image/'));
+  if (!files.length) return;
+  e.preventDefault();
+  addPictures(files);
+});
+
 function nextLabel(prefix) {
   const used = new Set(project.slides.flatMap((s) => s.objects.map((o) => o.label)));
   for (let i = 1; ; i++) if (!used.has(prefix + i)) return prefix + i;
@@ -439,7 +498,7 @@ $('#shapeForm').addEventListener('submit', (e) => {
 
 // ---- shape menus (dock under the canvas) ----------------------------------------------
 // Each category is a button in the dock that opens its shapes in a menu above it.
-const CAT_ICONS = { Electronics: 'zap', Shapes: 'shapes', Text: 'type', Graphs: 'chart-spline' };
+const CAT_ICONS = { Electronics: 'zap', Shapes: 'shapes', Text: 'type', Graphs: 'chart-spline', Media: 'image' };
 let openCat = null;
 
 function iconFor(o) {
@@ -468,7 +527,9 @@ function renderPalette() {
   const match = (name) => !q || name.toLowerCase().includes(q);
   const item = (d) => d.type === 'wire'
     ? `<button class="tool" data-add="wire" title="Wire tool: drag between terminals to connect parts (W)">${icon('cable')}<span>Wire tool</span></button>`
-    : `<button draggable="true" data-add="${d.type}" title="Add ${d.name} (or drag onto the slide)">${iconSVG(d.type)}<span>${d.name}</span></button>`;
+    : d.type === 'image'
+      ? `<button draggable="true" data-add="image" title="Add a picture from a file (you can also drop or paste images onto the slide)">${icon('image')}<span>${d.name}</span></button>`
+      : `<button draggable="true" data-add="${d.type}" title="Add ${d.name} (or drag onto the slide)">${iconSVG(d.type)}<span>${d.name}</span></button>`;
   const libItem = (s) => `<span class="libitem"><button draggable="true" data-lib="${s.id}" title="Add ${escapeHTML(s.name)} (or drag onto the slide)">${shapeIcon(s.obj)}<span>${escapeHTML(s.name)}</span></button>` +
     `<button class="del" data-libdel="${s.id}" title="Remove from library" aria-label="Remove ${escapeHTML(s.name)}">${icon('trash-2')}</button></span>`;
   const section = (cat, withTitle) => {
@@ -552,6 +613,7 @@ $('#palette').addEventListener('click', (e) => {
   openShelf(null);
   if (b.dataset.add === 'wire') { setTool('wire'); return; }
   if (b.dataset.add === 'poly') { setTool('draw'); return; }
+  if (b.dataset.add === 'image') { pickPicture(); return; }
   addObject(b.dataset.add);
 });
 $('#palette').addEventListener('dragstart', (e) => {
@@ -643,7 +705,7 @@ function field(label, key, type, value, extra = {}) {
   else if (type === 'select') input = `<select id="${id}" data-key="${key}">${extra.options.map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${v}"${v === value ? ' selected' : ''}>${t}</option>`; }).join('')}</select>`;
   else if (type === 'bool') input = `<input type="checkbox" id="${id}" data-key="${key}"${value ? ' checked' : ''}>`;
   else if (type === 'textarea') input = `<textarea id="${id}" data-key="${key}" placeholder="${extra.placeholder || ''}">${escapeHTML(value ?? '')}</textarea>`;
-  else input = `<input id="${id}" data-key="${key}" type="${type}" value="${escapeHTML(value ?? '')}"${extra.step ? ` step="${extra.step}"` : ''}${extra.min != null ? ` min="${extra.min}"` : ''}${extra.placeholder ? ` placeholder="${extra.placeholder}"` : ''}>`;
+  else input = `<input id="${id}" data-key="${key}" type="${type}" value="${escapeHTML(value ?? '')}"${extra.step ? ` step="${extra.step}"` : ''}${extra.min != null ? ` min="${extra.min}"` : ''}${extra.max != null ? ` max="${extra.max}"` : ''}${extra.placeholder ? ` placeholder="${extra.placeholder}"` : ''}>`;
   return `<label class="${type === 'textarea' ? 'wide' : ''}"><span>${label}</span>${input}</label>`;
 }
 
@@ -688,9 +750,10 @@ function renderInspector() {
   if (o.type === 'text' || o.type === 'math') h += field('Style', 'role', 'select', o.role || '', { options: TEXT_ROLES.map((r) => [r.id, r.name]) });
   for (const p of d.props || []) h += field(p.label, p.key, p.type, o[p.key], p);
   if (!d.noLabel) h += field('Label', 'label', 'text', o.label);
-  if (o.type !== 'group') h += `<div class="pair">${field('Colour', 'color', 'color', o.color)}${d.fillable ? field('Fill', 'fill', 'color', o.fill) : ''}</div>`;
+  if (o.type === 'image') h += `<div class="btnrow"><button data-act="replacePic">${icon('image')}Replace picture</button></div>`;
+  if (o.type !== 'group' && o.type !== 'image') h += `<div class="pair">${field('Colour', 'color', 'color', o.color)}${d.fillable ? field('Fill', 'fill', 'color', o.fill) : ''}</div>`;
   if (d.fillable) h += field('Fill opacity', 'fo', 'range', o.fo, { step: 0.05, min: 0 }).replace('type="range"', 'type="range" max="1"');
-  if (o.type !== 'text' && o.type !== 'math' && o.type !== 'group') h += field('Line width', 'sw', 'number', o.sw, { step: 0.5, min: 0 });
+  if (o.type !== 'text' && o.type !== 'math' && o.type !== 'group' && o.type !== 'image') h += field('Line width', 'sw', 'number', o.sw, { step: 0.5, min: 0 });
   h += '<h4>Position</h4>' + alignRow(1) + '<div class="pair">' + field('x', 'x', 'number', o.x, { step: 0.25 }) + field('y', 'y', 'number', o.y, { step: 0.25 }) + '</div>';
   if (d.ends) h += '<div class="pair">' + field('Δx', 'dx', 'number', o.dx, { step: 0.25 }) + field('Δy', 'dy', 'number', o.dy, { step: 0.25 }) + '</div>';
   else h += '<div class="pair">' + field('Rotate°', 'rot', 'number', o.rot, { step: 15 }) + field('Scale', 'scale', 'number', o.scale, { step: 0.1, min: 0.1 }) + '</div>';
@@ -733,6 +796,12 @@ $('#inspector').addEventListener('input', (e) => {
     else if (em[0]) em[0].step = Math.max(1, Math.round(v));
     o.emphs = em; delete o.emph;
   }, o.id + key);
+  else if (o.type === 'image' && (key === 'w' || key === 'h')) edit(() => {
+    // Pictures keep their shape: changing one side scales the other.
+    const old = Math.max(0.01, o[key]), nv = Math.max(0.1, v);
+    o.w = fx(o.w * nv / old); o.h = fx(o.h * nv / old); o[key] = nv;
+    const other = $(`#f_${key === 'w' ? 'h' : 'w'}`); if (other) other.value = o[key === 'w' ? 'h' : 'w'];
+  }, o.id + key);
   else edit(() => { o[key] = key === 'step' ? Math.max(1, Math.round(v)) : v; if (key === 'color' && o.role) o.role = undefined; }, o.id + key);
   renderStage(); renderSlides();
   if (el.tagName === 'SELECT' || el.type === 'checkbox' || key === 'fx') renderInspector();
@@ -750,6 +819,7 @@ function objAction(act) {
   const o = objs[0];
   const rot = (q, back) => { if (REG[q.type].ends) { [q.dx, q.dy] = back ? [q.dy, -q.dx] : [-q.dy, q.dx]; } else q.rot = ((q.rot || 0) + (back ? 270 : 90)) % 360; };
   if (act === 'saveShape') return openSaveShape();
+  if (act === 'replacePic') return pickPicture(null, null, o);
   if (act === 'tgroup') return groupTracks();
   if (act === 'del') edit(() => { slide().objects = slide().objects.filter((q) => !isSel(q.id)); setSelection([]); });
   if (act === 'rotate' || act === 'rotateBack') {

@@ -136,6 +136,14 @@ def('math', {
   props: [{ key: 'text', label: 'LaTeX', type: 'text' }, { key: 'size', label: 'Font size', type: 'number', step: 2 }],
   prims: (o) => [T(0, 0, o.text, o.size, true)],
 });
+// A picture from the lesson's media. w and h are its size in scene units; the image
+// itself lives in project.assets so undo snapshots and saved lessons stay small.
+def('image', {
+  name: 'Picture', sub: 'Pictures', cat: 'Media', noLabel: true, icon: 'image', defaults: { asset: null, w: 4, h: 3, opacity: 1, enter: 'FadeIn' },
+  props: [{ key: 'w', label: 'Width', type: 'number', step: 0.25, min: 0.1 }, { key: 'h', label: 'Height', type: 'number', step: 0.25, min: 0.1 },
+    { key: 'opacity', label: 'Opacity', type: 'range', step: 0.05, min: 0, max: 1 }],
+  prims: (o) => [{ t: 'image', asset: o.asset, w: o.w, h: o.h, opacity: o.opacity ?? 1 }],
+});
 def('circle', {
   name: 'Circle', sub: 'Basic', cat: 'Shapes', fillable: true, noLabel: true, defaults: { r: 1, color: '#58c4dd', fill: '#58c4dd', fo: 0 },
   props: [{ key: 'r', label: 'Radius', type: 'number', step: 0.25 }],
@@ -254,6 +262,7 @@ export const CATEGORIES = [
   { name: 'Shapes', subs: ['Basic', 'Lines', 'Draw'] },
   { name: 'Text', subs: ['Text'] },
   { name: 'Graphs', subs: ['Plots'] },
+  { name: 'Media', subs: ['Pictures'] },
 ];
 
 export const ENTER_ANIMS = ['Create', 'FadeIn', 'Write', 'GrowFromCenter', 'DrawBorderThenFill', 'None'];

@@ -47,15 +47,20 @@ def _st(m, color, width, fill=None, opacity=0.0):
     return m
 
 
+def _group(*parts):
+    """A VGroup, or a plain Group when a part is a picture (VGroups only hold vector shapes)."""
+    return VGroup(*parts) if all(isinstance(p, VMobject) for p in parts) else Group(*parts)
+
+
 def _place(parts, x, y, rot, s):
-    g = VGroup(*parts)
+    g = _group(*parts)
     g.scale(s, about_point=ORIGIN).rotate(rot * DEGREES, about_point=ORIGIN).shift([x, y, 0.0])
     return g
 
 
 def _obj(body, label=None):
     """Every object is VGroup(body[, label]) so emphasis can target the body."""
-    return VGroup(body, label) if label is not None else VGroup(body)
+    return _group(body, label) if label is not None else _group(body)
 
 
 def _axes(xr, yr, w, h, color, f=None, fcolor=YELLOW, width=4):
@@ -68,6 +73,11 @@ def _axes(xr, yr, w, h, color, f=None, fcolor=YELLOW, width=4):
     return parts
 
 
+def _pulse(m):
+    """Indicate for pictures: grow and shrink back without tinting the image."""
+    return m.animate(rate_func=there_and_back).scale(1.2)
+
+
 def _hold(scene, t0, dur):
     """Wait until dur seconds have passed since t0 (a click's minimum length)."""
     left = t0 + dur - scene.renderer.time
@@ -76,11 +86,32 @@ def _hold(scene, t0, dur):
 
 
 def _flow(m, color=YELLOW):
+    if not isinstance(m[0], VMobject):
+        return _pulse(m)
     return ShowPassingFlash(m[0].copy().set_stroke(color, width=8), time_width=0.5, run_time=1.5)
 `;
 
+const IMAGE_HELPERS = `
+# --- pictures ----------------------------------------------------------------
+from pathlib import Path as _IPath
+_IHERE = _IPath(__file__).parent if "__file__" in globals() else _IPath(".")
+
+
+def _img(name, w, h, opacity=1.0):
+    m = ImageMobject(str(_IHERE / name))
+    m._mv_src = name
+    m.stretch_to_fit_width(w).stretch_to_fit_height(h)
+    if opacity < 1:
+        m.set_opacity(opacity)
+    return m
+`;
+// Pictures can't be drawn stroke by stroke, so Create-style entrances fade them in.
+const hasImage = (o) => o.type === 'image' || (o.children || []).some(hasImage);
+const DRAWN = ['Create', 'Write', 'DrawBorderThenFill'];
+
 const textStyle = (o) => `, font=${str(fontOf(o))}` + (o.bold ? ', weight=BOLD' : '') + (o.italic ? ', slant=ITALIC' : '');
 
+let pyAssets = {};
 function primPy(p, o) {
   const color = str(o.color);
   const sw = p.thin ? 2 : o.sw ?? 4;
@@ -91,6 +122,10 @@ function primPy(p, o) {
     case 'arc': return `_st(_arc(${n(p.cx)}, ${n(p.cy)}, ${n(p.r)}, ${n(p.a0)}, ${n(p.da)}), ${color}, ${n(sw)})`;
     case 'circle': return `_st(_circ(${n(p.cx)}, ${n(p.cy)}, ${n(p.r)}), ${color}, ${n(sw)}${fillArgs(p.fill)})`;
     case 'text': return `Text(${str(p.text)}, font_size=${n(p.size)}, color=${color}${textStyle(o)}).move_to([${n(p.x)}, ${n(p.y)}, 0])`;
+    case 'image': {
+      const a = pyAssets[p.asset];
+      return a ? `_img(${str(mediaFile(p.asset, a))}, ${n(p.w)}, ${n(p.h)}${(p.opacity ?? 1) < 1 ? `, ${n(p.opacity)}` : ''})` : `_pl([(${n(-p.w / 2)}, 0.0), (${n(p.w / 2)}, 0.0)]).set_stroke(opacity=0)`;
+    }
     case 'math': return `MathTex(${str(p.text)}, font_size=${n(p.size)}, color=${color}).move_to([${n(p.x)}, ${n(p.y)}, 0])`;
   }
   return 'VMobject()';
@@ -195,6 +230,7 @@ export function captionCues(text, dur) {
 
 export function exportPython(project, { mode = 'slides' } = {}) {
   fonts.lesson = project.font || DEFAULT_FONT;
+  pyAssets = project.assets || {};
   const cls = ident(project.title);
   const beats = timeline(project);
   const L = [];
@@ -227,6 +263,8 @@ export function exportPython(project, { mode = 'slides' } = {}) {
   if (mode === 'slides') L.push('from manim_slides import Slide');
   L.push(HELPERS);
   if (fancy) L.push(BG_HELPERS);
+  const pictured = project.slides.some((s) => s.objects.some(hasImage));
+  if (pictured) L.push(IMAGE_HELPERS);
   if (voiced) L.push(VOICE_HELPERS);
   if (captioned) L.push(CAPTION_HELPERS);
   L.push('');
@@ -282,9 +320,11 @@ export function exportPython(project, { mode = 'slides' } = {}) {
           after.push(`del ${ref}`);
         } else if (a.kind === 'enter') {
           w(`${ref} = ${objectPy(a.obj)}`);
-          if (ENTER[a.anim]) anims.push(ENTER[a.anim](ref)); else adds.push(ref);
+          const anim = DRAWN.includes(a.anim) && hasImage(a.obj) ? 'FadeIn' : a.anim;
+          if (ENTER[anim]) anims.push(ENTER[anim](ref)); else adds.push(ref);
         } else if (a.kind === 'emph' && EMPH[a.anim]) {
-          anims.push(EMPH[a.anim](ref));
+          const o = a.obj || project.slides[beat.slide].objects.find((q) => q.id === a.id);
+          anims.push(a.anim === 'Indicate' && o && hasImage(o) ? `_pulse(${ref})` : EMPH[a.anim](ref));
         }
       }
       if (adds.length) w(`self.add(${adds.join(', ')})`);

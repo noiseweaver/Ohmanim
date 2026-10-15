@@ -205,10 +205,12 @@ export function assetBytes(asset) {
   for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
   return u8;
 }
-// Asset ids the lesson uses: background images and narration clips.
+// Asset ids the lesson uses: background images, pictures on slides and narration clips.
 export function usedAssets(project, kind = null) {
   const ids = new Set();
   if (kind !== 'audio') for (const b of [project.background, ...project.slides.map((s) => s.background)]) if (b && b.image && project.assets?.[b.image]) ids.add(b.image);
+  const pics = (objs) => { for (const o of objs || []) { if (o.type === 'image' && o.asset && project.assets?.[o.asset]) ids.add(o.asset); if (o.children) pics(o.children); } };
+  if (kind !== 'audio') for (const s of project.slides) pics(s.objects);
   if (kind !== 'image') for (const s of project.slides) for (const id of Object.values(s.voice || {})) if (id && project.assets?.[id]) ids.add(id);
   return [...ids];
 }

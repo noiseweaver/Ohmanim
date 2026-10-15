@@ -11,9 +11,12 @@ import { FrameEncoder, AUDIO_RATE } from './encode.js';
 export const PYODIDE_VERSION = '0.29.5';
 const PYODIDE_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
 const MANIM_VERSION = '0.21.0';
-// Pure-Python dependencies Manim imports. numpy, scipy, Pillow etc. come from Pyodide's own builds.
-const PURE_DEPS = ['numpy', 'scipy', 'pillow', 'networkx', 'fonttools', 'beautifulsoup4', 'pygments', 'rich', 'cloup',
-  'click', 'isosurfaces', 'svgelements', 'tqdm', 'typing-extensions', 'decorator'];
+// What Manim imports. Pyodide has its own builds of most of it (loaded from its CDN with their
+// dependencies); the rest are pure-Python wheels from PyPI, pinned to versions that work with
+// Pyodide's packages and installed without dependency resolution so nothing else gets pulled in.
+const PYODIDE_PKGS = ['numpy', 'scipy', 'pillow', 'networkx', 'fonttools', 'beautifulsoup4', 'pygments', 'rich',
+  'click', 'tqdm', 'typing-extensions', 'decorator', 'micropip'];
+const PYPI_PKGS = ['cloup==3.0.8', 'isosurfaces==0.1.2', 'svgelements==1.9.6', 'markdown-it-py==3.0.0', 'mdurl==0.1.2'];
 const SHIM_FILES = ['manimweb/__init__.py', 'manimweb/cairo_shim.py', 'manimweb/pango_shim.py', 'manimweb/pathops_shim.py', 'manimweb/stubs.py'];
 let fontList = []; // fonts/fonts.json
 const fontsLoaded = new Set();
@@ -32,11 +35,13 @@ async function boot() {
   const { loadPyodide } = await import(PYODIDE_URL + 'pyodide.mjs');
   const py = await loadPyodide({ indexURL: PYODIDE_URL });
   status('Installing NumPy, SciPy and friends…', [1, BOOT_STEPS]);
-  await py.loadPackage('micropip');
+  await py.loadPackage(PYODIDE_PKGS);
   const micropip = py.pyimport('micropip');
-  await micropip.install(PURE_DEPS);
   status(`Installing Manim ${MANIM_VERSION}…`, [2, BOOT_STEPS]);
-  await micropip.install(`manim==${MANIM_VERSION}`, { deps: false });
+  for (const pkg of [...PYPI_PKGS, `manim==${MANIM_VERSION}`]) {
+    try { await micropip.install(pkg, { deps: false }); }
+    catch (err) { throw new Error(`Could not install ${pkg}: ${pyErrorMessage(err)}`); }
+  }
   status('Loading the browser shims…', [3, BOOT_STEPS]);
   const FS = py.FS;
   for (const d of ['/manimweb', '/manimweb/manimweb', '/manimweb/fonts', '/manimweb/fonts/files']) try { FS.mkdir(d); } catch {}
@@ -170,5 +175,7 @@ function pyErrorMessage(err) {
   // Python tracebacks are long; keep the last line plus the user's code location.
   const lines = s.trim().split('\n');
   const user = lines.filter((l) => l.includes('lesson.py')).slice(-1);
-  return [...user, lines.at(-1)].join('\n');
+  // Install errors put the useful line (which package) above a trailing "See: <faq>" line.
+  const cause = lines.filter((l) => /Error:|Can't find|conflict/i.test(l)).slice(-1);
+  return [...new Set([...user, ...cause, lines.at(-1)])].join('\n');
 }

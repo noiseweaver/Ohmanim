@@ -6,8 +6,9 @@ import { demoProject } from './demo.js';
 import { renderCode, warmUp, onEngine, engineReady } from './manim/engine.js';
 import { icon, installIcons } from './icons.js';
 import { pop, flash, appear, flip, shake } from './motion.js';
-import { bgOf, bgSVG, bgKey, isLight, BG_DEFAULT, FILLS, PATTERNS, FITS, PRESETS, importImage, usedAssets, assetFile, assetBytes, mediaFile } from './backgrounds.js';
+import { bgOf, bgSVG, bgKey, isLight, BG_DEFAULT, FILLS, PATTERNS, FITS, PRESETS, importImage, usedAssets, assetFile, assetBytes, mediaFile, clipSoundFile } from './backgrounds.js';
 import { saveAssets, loadAssets, pruneAssets } from './store.js';
+import { importVideo, extractFrames, VideoLayer } from './video.js';
 import { startRecording, releaseMic, playClip, stopClip, decode, toWav, fmtDur, importAudio, playSound, stopSounds, startMusic, stopMusic } from './voice.js';
 import { THEMES, STYLES, loadLook, saveLook, applyLook, themeSwatch, TEXT_ROLES, applySlideTheme, applyRole, slideSwatch, slidePalette } from './themes.js';
 
@@ -327,9 +328,9 @@ stage.addEventListener('drop', (e) => {
   const key = e.dataTransfer.getData('text/x-manimvis');
   e.preventDefault();
   const [x, y] = svgPoint(e);
-  const files = [...(e.dataTransfer.files || [])].filter((f) => f.type.startsWith('image/'));
+  const files = [...(e.dataTransfer.files || [])].filter((f) => f.type.startsWith('image/') || isVideoFile(f));
   if (!key && files.length) { addPictures(files, snap(x), snap(y)); return; }
-  if (key === 'image') { pickPicture(snap(x), snap(y)); return; }
+  if (key === 'image' || key === 'video') { pickPicture(snap(x), snap(y), null, key); return; }
   if (key.startsWith('lib:')) addLibraryShape(key.slice(4), snap(x), snap(y));
   else if (REG[key]) addObject(key, snap(x), snap(y));
 });
@@ -356,7 +357,13 @@ function addObject(type, x, y) {
 // ---- pictures -------------------------------------------------------------------
 // A picture is an object whose image lives in project.assets, like background images.
 let pictureAt = null;
-function pickPicture(x, y, replace = null) { pictureAt = { x, y, replace }; $('#picFile').click(); }
+// kind: 'image' or 'video', which files the picker offers.
+function pickPicture(x, y, replace = null, kind = replace?.type || 'image') {
+  pictureAt = { x, y, replace };
+  $('#picFile').accept = kind === 'video' ? 'video/*' : 'image/*';
+  $('#picFile').multiple = !replace;
+  $('#picFile').click();
+}
 $('#picFile').addEventListener('change', (e) => {
   const files = [...e.target.files];
   e.target.value = '';
@@ -365,12 +372,17 @@ $('#picFile').addEventListener('change', (e) => {
   if (files.length) addPictures(files, at.x, at.y, at.replace);
 });
 const picName = (asset) => String(asset.name || '').replace(/\.[a-z0-9]+$/i, '').slice(0, 32);
-// Fit a picture inside 6 × 4 scene units, keeping its shape.
+// Fit a picture or clip inside 6 × 4 scene units, keeping its shape.
 function pictureSize(asset) { const k = Math.min(6 / asset.w, 4 / asset.h); return [fx(asset.w * k), fx(asset.h * k)]; }
+const isVideoFile = (f) => f.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|ogv)$/i.test(f.name);
+// Pictures and video clips from files. With `replace`, the first file swaps that object's media.
 async function addPictures(files, x, y, replace = null) {
   const loaded = [];
   for (const file of files) {
-    try { loaded.push(await importImage(file)); } catch (err) { toast(`${file.name}: ${err.message}`); }
+    const video = isVideoFile(file);
+    if (replace && video !== (replace.type === 'video')) { toast(`Pick ${replace.type === 'video' ? 'a video' : 'an image'} to replace this ${replace.type === 'video' ? 'clip' : 'picture'}.`); continue; }
+    if (video) toast(`Reading ${file.name}…`);
+    try { loaded.push(video ? await importVideo(file) : await importImage(file)); } catch (err) { toast(`${file.name}: ${err.message}`); }
   }
   if (!loaded.length) return;
   const ids = [];
@@ -389,7 +401,7 @@ async function addPictures(files, x, y, replace = null) {
       }
       let px = x, py = y;
       if (px == null) [px, py] = staggered();
-      const o = makeObject('image', { x: px + i * 0.5, y: py - i * 0.5, asset: id, w, h, name: picName(asset) });
+      const o = makeObject(asset.kind === 'video' ? 'video' : 'image', { x: px + i * 0.5, y: py - i * 0.5, asset: id, w, h, name: picName(asset) });
       slide().objects.push(o);
       ids.push(o.id);
     });
@@ -498,7 +510,7 @@ $('#shapeForm').addEventListener('submit', (e) => {
 
 // ---- shape menus (dock under the canvas) ----------------------------------------------
 // Each category is a button in the dock that opens its shapes in a menu above it.
-const CAT_ICONS = { Electronics: 'zap', Shapes: 'shapes', Text: 'type', Graphs: 'chart-spline', Media: 'image' };
+const CAT_ICONS = { Electronics: 'zap', Shapes: 'shapes', Text: 'type', Graphs: 'chart-spline', Media: 'film' };
 let openCat = null;
 
 function iconFor(o) {
@@ -527,8 +539,8 @@ function renderPalette() {
   const match = (name) => !q || name.toLowerCase().includes(q);
   const item = (d) => d.type === 'wire'
     ? `<button class="tool" data-add="wire" title="Wire tool: drag between terminals to connect parts (W)">${icon('cable')}<span>Wire tool</span></button>`
-    : d.type === 'image'
-      ? `<button draggable="true" data-add="image" title="Add a picture from a file (you can also drop or paste images onto the slide)">${icon('image')}<span>${d.name}</span></button>`
+    : d.type === 'image' || d.type === 'video'
+      ? `<button draggable="true" data-add="${d.type}" title="${d.type === 'video' ? 'Add a video clip from a file. It plays on its click, and the click lasts until it ends' : 'Add a picture from a file'} (you can also drop files onto the slide)">${icon(d.icon)}<span>${d.name}</span></button>`
       : `<button draggable="true" data-add="${d.type}" title="Add ${d.name} (or drag onto the slide)">${iconSVG(d.type)}<span>${d.name}</span></button>`;
   const libItem = (s) => `<span class="libitem"><button draggable="true" data-lib="${s.id}" title="Add ${escapeHTML(s.name)} (or drag onto the slide)">${shapeIcon(s.obj)}<span>${escapeHTML(s.name)}</span></button>` +
     `<button class="del" data-libdel="${s.id}" title="Remove from library" aria-label="Remove ${escapeHTML(s.name)}">${icon('trash-2')}</button></span>`;
@@ -613,7 +625,7 @@ $('#palette').addEventListener('click', (e) => {
   openShelf(null);
   if (b.dataset.add === 'wire') { setTool('wire'); return; }
   if (b.dataset.add === 'poly') { setTool('draw'); return; }
-  if (b.dataset.add === 'image') { pickPicture(); return; }
+  if (b.dataset.add === 'image' || b.dataset.add === 'video') { pickPicture(null, null, null, b.dataset.add); return; }
   addObject(b.dataset.add);
 });
 $('#palette').addEventListener('dragstart', (e) => {
@@ -752,9 +764,14 @@ function renderInspector() {
   for (const p of d.props || []) h += field(p.label, p.key, p.type, o[p.key], p);
   if (!d.noLabel) h += field('Label', 'label', 'text', o.label);
   if (o.type === 'image') h += `<div class="btnrow"><button data-act="replacePic">${icon('image')}Replace picture</button></div>`;
-  if (o.type !== 'group' && o.type !== 'image') h += `<div class="pair">${field('Colour', 'color', 'color', o.color)}${d.fillable ? field('Fill', 'fill', 'color', o.fill) : ''}</div>`;
+  if (o.type === 'video') {
+    const a = project.assets?.[o.asset];
+    h += `<div class="btnrow"><button data-act="replacePic">${icon('film')}Replace clip</button></div>` +
+      (a ? `<div class="help">${fmtDur(a.dur)} clip${a.hasAudio ? ' with sound' : ', no sound'}. It plays on its click, and that click lasts until it ends.</div>` : '');
+  }
+  if (o.type !== 'group' && o.type !== 'image' && o.type !== 'video') h += `<div class="pair">${field('Colour', 'color', 'color', o.color)}${d.fillable ? field('Fill', 'fill', 'color', o.fill) : ''}</div>`;
   if (d.fillable) h += field('Fill opacity', 'fo', 'range', o.fo, { step: 0.05, min: 0 }).replace('type="range"', 'type="range" max="1"');
-  if (o.type !== 'text' && o.type !== 'math' && o.type !== 'group' && o.type !== 'image') h += field('Line width', 'sw', 'number', o.sw, { step: 0.5, min: 0 });
+  if (o.type !== 'text' && o.type !== 'math' && o.type !== 'group' && o.type !== 'image' && o.type !== 'video') h += field('Line width', 'sw', 'number', o.sw, { step: 0.5, min: 0 });
   h += '<h4>Position</h4>' + alignRow(1) + '<div class="pair">' + field('x', 'x', 'number', o.x, { step: 0.25 }) + field('y', 'y', 'number', o.y, { step: 0.25 }) + '</div>';
   if (d.ends) h += '<div class="pair">' + field('Δx', 'dx', 'number', o.dx, { step: 0.25 }) + field('Δy', 'dy', 'number', o.dy, { step: 0.25 }) + '</div>';
   else h += '<div class="pair">' + field('Rotate°', 'rot', 'number', o.rot, { step: 15 }) + field('Scale', 'scale', 'number', o.scale, { step: 0.1, min: 0.1 }) + '</div>';
@@ -798,7 +815,7 @@ $('#inspector').addEventListener('input', (e) => {
     else if (em[0]) em[0].step = Math.max(1, Math.round(v));
     o.emphs = em; delete o.emph;
   }, o.id + key);
-  else if (o.type === 'image' && (key === 'w' || key === 'h')) edit(() => {
+  else if ((o.type === 'image' || o.type === 'video') && (key === 'w' || key === 'h')) edit(() => {
     // Pictures keep their shape: changing one side scales the other.
     const old = Math.max(0.01, o[key]), nv = Math.max(0.1, v);
     o.w = fx(o.w * nv / old); o.h = fx(o.h * nv / old); o[key] = nv;
@@ -918,10 +935,12 @@ const commands = {
       const t0 = performance.now();
       const v = playClip(project.assets?.[b.voice]);
       playSounds(b);
+      stageVideos.sync(videosIn(applyBeat(state, b)), project.assets, enteringIds(b));
       state = await player.play(state, b);
       if (!state) { stopClip(); stopSounds(); break; }
-      await v; await sleep(Math.max(150, b.hold * 1000 - (performance.now() - t0)));
+      await v; await sleep(Math.max(150, Math.max(b.hold, b.clip || 0) * 1000 - (performance.now() - t0)));
     }
+    stageVideos.clear();
     $('#objLayer').style.opacity = ''; $('#ghostLayer').style.opacity = ''; $('#overlay').style.display = '';
     renderStage();
   },
@@ -966,6 +985,28 @@ function renderAssets() { return usedAssets(project, 'image').map((id) => { cons
 async function narrationPCM() {
   const out = {};
   for (const id of usedAssets(project, 'audio')) { try { out[mediaFile(id, project.assets[id])] = await decode(project.assets[id]); } catch {} }
+  for (const id of usedAssets(project, 'video')) if (project.assets[id].hasAudio) { try { out[clipSoundFile(id)] = await decode(project.assets[id]); } catch {} }
+  return out;
+}
+// Frames of every clip for the renderer, keyed by the clip's file name. Each clip is pulled out
+// at the size it covers on screen; long or large clips shrink so they fit in memory.
+const FRAME_BUDGET = 700e6; // bytes of decoded frames
+async function clipFrames(width, fps, onStatus) {
+  const ids = usedAssets(project, 'video');
+  if (!ids.length) return {};
+  const pxPerUnit = width / FRAME_W, size = {};
+  const visit = (list, s = 1) => list.forEach((o) => {
+    if (o.type === 'video' && ids.includes(o.asset)) { const k = s * (o.scale ?? 1); const z = size[o.asset] ||= [0, 0]; z[0] = Math.max(z[0], o.w * k * pxPerUnit); z[1] = Math.max(z[1], o.h * k * pxPerUnit); }
+    if (o.children) visit(o.children, s * (o.scale ?? 1));
+  });
+  project.slides.forEach((sl) => visit(sl.objects));
+  const cost = ids.reduce((t, id) => t + size[id][0] * size[id][1] * 4 * Math.ceil(project.assets[id].dur * fps), 0);
+  const shrink = Math.min(1, Math.sqrt(FRAME_BUDGET / Math.max(1, cost)));
+  const out = {};
+  for (const id of ids) {
+    const a = project.assets[id];
+    out[mediaFile(id, a)] = await extractFrames(a, fps, size[id][0] * shrink, size[id][1] * shrink, (i, n) => { if (i % 10 === 0 || i === n) onStatus(`Preparing ${picName(a) || 'video clip'}: frame ${i} of ${n}`); });
+  }
   return out;
 }
 $('#dlAssets').addEventListener('click', async () => {
@@ -974,10 +1015,11 @@ $('#dlAssets').addEventListener('click', async () => {
     const a = project.assets[id];
     const blob = a.kind === 'audio' ? await toWav(a) : new Blob([assetBytes(a)], { type: a.type });
     setTimeout(() => download(blob, mediaFile(id, a)), i++ * 300);
+    if (a.kind === 'video' && a.hasAudio) { const wav = await toWav(a); setTimeout(() => download(wav, clipSoundFile(id)), i++ * 300); }
   }
 });
 function openCode() {
-  const n = usedAssets(project).length;
+  const n = usedAssets(project).reduce((t, id) => t + (project.assets[id].kind === 'video' && project.assets[id].hasAudio ? 2 : 1), 0);
   $('#dlAssets').hidden = !n;
   $('#dlAssets').querySelector('span').textContent = n > 1 ? `Download ${n} media files` : 'Download media file';
   $('#code').value = project.customCode || generatedCode(exportMode);
@@ -1062,7 +1104,8 @@ async function startRender() {
   if (!engineReady()) $('#renderStatus').textContent = 'Waiting for Manim to finish installing. The render starts right after.';
   try {
     const audio = await narrationPCM();
-    const res = await renderCode(renderCodeText, { width, height, fps, assets: renderAssets(), audio }, (m) => {
+    const videos = await clipFrames(width, fps, (t) => ($('#renderStatus').textContent = t));
+    const res = await renderCode(renderCodeText, { width, height, fps, assets: renderAssets(), audio, videos }, (m) => {
       if (m.type === 'status') $('#renderStatus').textContent = m.text;
       if (m.type === 'preview') {
         previewCtx.drawImage(m.bitmap, 0, 0, 1280, 720); m.bitmap.close();
@@ -1118,6 +1161,10 @@ function stateBefore(beat) {
   return st;
 }
 const video = $('#presentVideo');
+// Clips play as real video elements over the slide while previewing and presenting.
+const stageVideos = new VideoLayer($('#stage')), presentVideos = new VideoLayer($('#presentSvg'));
+const videosIn = (state) => [...state.values()].filter((o) => o.type === 'video');
+const enteringIds = (beat) => new Set(beat.phases.flat().filter((a) => a.kind === 'enter').map((a) => a.id));
 const presenter = {
   beats: [], i: -1, state: new Map(), player: new Player($('#presentLayer')), busy: false, mode: 'live', raf: 0,
   // forceVideo: present the latest render even if the slides changed since.
@@ -1153,7 +1200,7 @@ const presenter = {
   },
   close() {
     this.player.stop();
-    stopClip(); stopSounds(); stopMusic();
+    stopClip(); stopSounds(); stopMusic(); presentVideos.clear();
     if (this.take) this.take.finish();
     cancelAnimationFrame(this.raf); video.pause();
     $('#present').hidden = true;
@@ -1203,6 +1250,8 @@ const presenter = {
     else playClip(project.assets?.[this.beats[this.i].voice]);
     playSounds(this.beats[this.i]);
     const target = applyBeat(this.state, this.beats[this.i]);
+    presentVideos.muted = !!this.take;
+    presentVideos.sync(videosIn(target), project.assets, enteringIds(this.beats[this.i]));
     const res = await this.player.play(this.state, this.beats[this.i]);
     this.state = target;
     if (!res) $('#presentLayer').innerHTML = stateSVG(target);
@@ -1219,6 +1268,7 @@ const presenter = {
     this.i--;
     this.state = new Map();
     for (let k = 0; k <= this.i; k++) this.state = applyBeat(this.state, this.beats[k]);
+    presentVideos.sync(videosIn(this.state), project.assets);
     $('#presentLayer').innerHTML = stateSVG(this.state);
     this.setBg(this.beats[this.i].slide, false);
     this.pos();
@@ -1753,9 +1803,11 @@ async function playStep(k) {
   const t0 = performance.now();
   const v = playClip(project.assets?.[beat.voice]);
   playSounds(beat);
+  stageVideos.sync(videosIn(applyBeat(state, beat)), project.assets, enteringIds(beat));
   await player.play(state, beat);
   await v;
-  await sleep(Math.max(300, beat.hold * 1000 - (performance.now() - t0)));
+  await sleep(Math.max(300, Math.max(beat.hold, beat.clip || 0) * 1000 - (performance.now() - t0)));
+  stageVideos.clear();
   $('#objLayer').style.opacity = ''; $('#ghostLayer').style.opacity = ''; $('#overlay').style.display = '';
   renderStage();
 }

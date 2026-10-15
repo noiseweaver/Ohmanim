@@ -11,11 +11,12 @@ Op codes (all values are floats, coordinates in Manim scene units):
   10 JOIN j          11 CAP c                    12 LINE x y
   13 IMAGE i ulx uly urx ury dlx dly alpha   (image i of manimweb.IMAGES, drawn
      into the parallelogram given by its top-left, top-right and bottom-left corners)
+  14 VIDEO i ulx uly urx ury dlx dly alpha f   (frame f of clip i of manimweb.VIDEOS)
 """
 import sys
 import types
 
-MOVE, CURVE, CLOSE, NEWPATH, RGBA, GRAD, FILL, STROKE, WIDTH, JOIN, CAP, LINE, IMAGE = range(1, 14)
+MOVE, CURVE, CLOSE, NEWPATH, RGBA, GRAD, FILL, STROKE, WIDTH, JOIN, CAP, LINE, IMAGE, VIDEO = range(1, 15)
 
 
 class Recorder:

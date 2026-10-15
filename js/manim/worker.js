@@ -102,6 +102,8 @@ async function render({ code, width, height, fps, tex, assets = [], audio = {} }
     enc.images.push(await createImageBitmap(new Blob([a.bytes], { type: a.type })));
     names.push(a.name);
   }
+  const clips = Object.keys(clipFrames);
+  enc.videos = clips.map((k) => clipFrames[k]);
   let lastPreview = 0;
   const sink = (kind, payload, n, bg) => {
     if (kind === 'frame') {
@@ -133,6 +135,7 @@ async function render({ code, width, height, fps, tex, assets = [], audio = {} }
   pyodide.globals.set('_mv_tex', pyodide.toPy(tex || {}));
   pyodide.globals.set('_mv_size', pyodide.toPy([width, height, fps]));
   pyodide.globals.set('_mv_images', pyodide.toPy(names));
+  pyodide.globals.set('_mv_videos', pyodide.toPy(clips));
   let result;
   try {
     const r = await pyodide.runPythonAsync(`
@@ -140,7 +143,7 @@ import manimweb
 from pyodide.ffi import to_js
 def _wrap(kind, payload, n, bg):
     _mv_sink(kind, to_js(memoryview(payload)) if kind == "frame" else payload, n, bg)
-_res = manimweb.render(_mv_code, sink=_wrap, width=_mv_size[0], height=_mv_size[1], fps=_mv_size[2], tex=dict(_mv_tex), images=list(_mv_images))
+_res = manimweb.render(_mv_code, sink=_wrap, width=_mv_size[0], height=_mv_size[1], fps=_mv_size[2], tex=dict(_mv_tex), images=list(_mv_images), videos=list(_mv_videos))
 _res
 `);
     result = r.toJs({ dict_converter: Object.fromEntries });
@@ -187,10 +190,15 @@ async function loadFontsFor(code) {
   }));
 }
 
+// Frames of the lesson's video clips, sent (transferred) before a render: {file name: ImageBitmap[]}.
+let clipFrames = {};
+function closeVideos() { for (const list of Object.values(clipFrames)) for (const b of list) b.close?.(); clipFrames = {}; }
+
 self.onmessage = async (e) => {
   const m = e.data;
   try {
     if (m.type === 'init') await (booting ||= boot());
+    else if (m.type === 'videos') { closeVideos(); clipFrames = m.videos || {}; }
     else if (m.type === 'render') await render(m);
   } catch (err) {
     if (!pyodide) booting = null; // let the next attempt retry the download

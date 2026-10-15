@@ -2,8 +2,9 @@
 // Canvas 2D context. Works in windows and workers (OffscreenCanvas).
 export const FRAME_W = 14.222222222222221, FRAME_H = 8;
 
-// images: bitmaps for op 13, in the order of manimweb.IMAGES.
-export function drawOps(ctx, ops, width, height, bg, images = []) {
+// images: bitmaps for op 13, in the order of manimweb.IMAGES; videos: a list of frame
+// bitmaps per clip for op 14, in the order of manimweb.VIDEOS.
+export function drawOps(ctx, ops, width, height, bg, images = [], videos = []) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
   ctx.fillStyle = bg || '#000000';
@@ -39,6 +40,19 @@ export function drawOps(ctx, ops, width, height, bg, images = []) {
       case 13: {
         const img = images[ops[i]], [ulx, uly, urx, ury, dlx, dly, a] = [1, 2, 3, 4, 5, 6, 7].map((k) => ops[i + k]);
         i += 8;
+        if (!img) break;
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.transform((urx - ulx) / img.width, (ury - uly) / img.width, (dlx - ulx) / img.height, (dly - uly) / img.height, ulx, uly);
+        ctx.drawImage(img, 0, 0);
+        ctx.restore();
+        break;
+      }
+      case 14: {
+        const clip = videos[ops[i]], [ulx, uly, urx, ury, dlx, dly, a, f] = [1, 2, 3, 4, 5, 6, 7, 8].map((k) => ops[i + k]);
+        i += 9;
+        // Past the end a clip holds its last frame.
+        const img = clip?.[Math.max(0, Math.min(clip.length - 1, f))];
         if (!img) break;
         ctx.save();
         ctx.globalAlpha = a;

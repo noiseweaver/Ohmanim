@@ -205,14 +205,17 @@ export function assetBytes(asset) {
   for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
   return u8;
 }
-// Asset ids the lesson uses: background images, pictures, narration, sound effects and music.
+// Asset ids the lesson uses: background images, pictures, video clips, narration, sound
+// effects and music. kind narrows it to 'image', 'video' or 'audio'.
 export function usedAssets(project, kind = null) {
   const ids = new Set();
-  if (kind !== 'audio') for (const b of [project.background, ...project.slides.map((s) => s.background)]) if (b && b.image && project.assets?.[b.image]) ids.add(b.image);
-  const pics = (objs) => { for (const o of objs || []) { if (o.type === 'image' && o.asset && project.assets?.[o.asset]) ids.add(o.asset); if (o.children) pics(o.children); } };
-  if (kind !== 'audio') for (const s of project.slides) pics(s.objects);
-  const audio = (id) => id && project.assets?.[id] && ids.add(id);
-  if (kind !== 'image') {
+  const want = (k) => !kind || kind === k;
+  const has = (id) => id && project.assets?.[id];
+  if (want('image')) for (const b of [project.background, ...project.slides.map((s) => s.background)]) if (b && has(b.image)) ids.add(b.image);
+  const objs = (list) => { for (const o of list || []) { if (has(o.asset) && want(o.type === 'video' ? 'video' : 'image') && (o.type === 'image' || o.type === 'video')) ids.add(o.asset); if (o.children) objs(o.children); } };
+  for (const s of project.slides) objs(s.objects);
+  if (want('audio')) {
+    const audio = (id) => has(id) && ids.add(id);
     for (const s of project.slides) {
       Object.values(s.voice || {}).forEach(audio);
       Object.values(s.sounds || {}).forEach((list) => (list || []).forEach((sd) => audio(sd.asset)));
@@ -222,7 +225,10 @@ export function usedAssets(project, kind = null) {
   return [...ids];
 }
 // File name an asset gets next to the exported code.
-export const mediaFile = (id, asset) => (asset.kind === 'audio' ? `audio-${id}.wav` : assetFile(id, asset));
+export const mediaFile = (id, asset) => (asset.kind === 'audio' ? `audio-${id}.wav` : asset.kind === 'video' ? `video-${id}.${videoExt(asset)}` : assetFile(id, asset));
+// A clip's soundtrack, saved next to it as WAV so desktop Manim needs no extra tools.
+export const clipSoundFile = (id) => `video-${id}.wav`;
+const videoExt = (asset) => (/webm/.test(asset.type) ? 'webm' : /quicktime/.test(asset.type) ? 'mov' : /ogg/.test(asset.type) ? 'ogv' : 'mp4');
 
 // ---- Manim export ---------------------------------------------------------------
 export const BG_HELPERS = `

@@ -2,7 +2,7 @@
 // same primitives the editor draws, so the render matches the preview.
 import { REG, exprToPy } from './components.js';
 import { labelPos, timeline, LABEL_SIZE, fontOf, fonts, DEFAULT_FONT } from './render.js';
-import { bgOf, bgKey, isPlain, bgPy, BG_HELPERS, usedAssets, mediaFile } from './backgrounds.js';
+import { bgOf, bgKey, isPlain, bgPy, BG_HELPERS, usedAssets, mediaFile, clipSoundFile } from './backgrounds.js';
 
 const n = (v) => {
   const r = Math.round(v * 10000) / 10000;
@@ -105,8 +105,53 @@ def _img(name, w, h, opacity=1.0):
         m.set_opacity(opacity)
     return m
 `;
-// Pictures can't be drawn stroke by stroke, so Create-style entrances fade them in.
-const hasImage = (o) => o.type === 'image' || (o.children || []).some(hasImage);
+const VIDEO_HELPERS = `
+# --- video clips ---------------------------------------------------------------
+_DECODERS = {}
+
+
+class _Video(ImageMobject):
+    """A video clip that plays from the moment it is created and holds its last frame.
+    On a computer PyAV (installed with Manim) decodes it; in Ohmanim the browser draws it."""
+
+    def __init__(self, name, w, h, dur, opacity=1.0, **kwargs):
+        self._mv_video = name
+        self._mv_time = 0.0
+        self._mv_dur = dur
+        self._key = None
+        try:
+            import manimweb  # noqa: F401
+            px = np.full((2, 2, 4), 255, dtype=np.uint8)
+        except ImportError:
+            import av
+            frames = av.open(str(_IHERE / name)).decode(video=0)
+            first = next(frames)
+            self._key = f"{name}#{len(_DECODERS)}"
+            _DECODERS[self._key] = [frames, next(frames, None)]
+            px = first.to_ndarray(format="rgba")
+        super().__init__(px, **kwargs)
+        self.stretch_to_fit_width(w).stretch_to_fit_height(h)
+        if opacity < 1:
+            self.set_opacity(opacity)
+        self.add_updater(_Video._tick)
+
+    def _tick(self, dt):
+        self._mv_time += dt
+        d = _DECODERS.get(self._key)
+        if not d:
+            return
+        frame = None
+        while d[1] is not None and d[1].time is not None and d[1].time <= self._mv_time:
+            frame, d[1] = d[1], next(d[0], None)
+        if frame is not None:
+            px = frame.to_ndarray(format="rgba")
+            px[:, :, 3] = self.pixel_array[0, 0, 3]
+            self.pixel_array = px
+`;
+// Pictures and clips can't be drawn stroke by stroke, so Create-style entrances fade them in.
+const hasImage = (o) => o.type === 'image' || o.type === 'video' || (o.children || []).some(hasImage);
+const hasVideo = (o) => o.type === 'video' || (o.children || []).some(hasVideo);
+const videosIn = (o) => (o.type === 'video' ? [o] : (o.children || []).flatMap(videosIn));
 const DRAWN = ['Create', 'Write', 'DrawBorderThenFill'];
 
 const textStyle = (o) => `, font=${str(fontOf(o))}` + (o.bold ? ', weight=BOLD' : '') + (o.italic ? ', slant=ITALIC' : '');
@@ -124,6 +169,7 @@ function primPy(p, o) {
     case 'text': return `Text(${str(p.text)}, font_size=${n(p.size)}, color=${color}${textStyle(o)}).move_to([${n(p.x)}, ${n(p.y)}, 0])`;
     case 'image': {
       const a = pyAssets[p.asset];
+      if (p.video) return a ? `_Video(${str(mediaFile(p.asset, a))}, ${n(p.w)}, ${n(p.h)}, ${n(a.dur)}${(p.opacity ?? 1) < 1 ? `, ${n(p.opacity)}` : ''})` : `_pl([(${n(-p.w / 2)}, 0.0), (${n(p.w / 2)}, 0.0)]).set_stroke(opacity=0)`;
       return a ? `_img(${str(mediaFile(p.asset, a))}, ${n(p.w)}, ${n(p.h)}${(p.opacity ?? 1) < 1 ? `, ${n(p.opacity)}` : ''})` : `_pl([(${n(-p.w / 2)}, 0.0), (${n(p.w / 2)}, 0.0)]).set_stroke(opacity=0)`;
     }
     case 'math': return `MathTex(${str(p.text)}, font_size=${n(p.size)}, color=${color}).move_to([${n(p.x)}, ${n(p.y)}, 0])`;
@@ -272,6 +318,9 @@ export function captionCues(text, dur) {
 
 // Volume (0..1) as Manim's gain in decibels.
 const dB = (v) => 20 * Math.log10(Math.max(0.001, v));
+// Soundtracks of the clips that start on this click, as {asset, vol}.
+const clipSounds = (project, beat) => beat.phases.flat().filter((a) => a.kind === 'enter').flatMap((a) => videosIn(a.obj))
+  .filter((o) => project.assets?.[o.asset]?.hasAudio && (o.vol ?? 1) > 0).map((o) => ({ asset: o.asset, vol: o.vol ?? 1 }));
 // A click's sound effects whose files are in the lesson, and not silenced.
 const soundsOf = (project, beat) => (beat.sounds || []).filter((sd) => sd.asset && project.assets?.[sd.asset] && (sd.vol ?? 1) > 0);
 
@@ -294,11 +343,11 @@ export function exportPython(project, { mode = 'slides' } = {}) {
     L.push(`    manim -qh lesson.py ${cls}`);
   }
   if (project.slides.some((s) => s.objects.some((o) => o.type === 'math'))) L.push('\nMath objects use MathTex and need a LaTeX installation.');
-  const media = usedAssets(project).map((id) => mediaFile(id, project.assets[id]));
+  const media = usedAssets(project).flatMap((id) => { const a = project.assets[id]; return a.kind === 'video' && a.hasAudio ? [mediaFile(id, a), clipSoundFile(id)] : [mediaFile(id, a)]; });
   if (media.length) L.push(`\nPut these files next to this file (Download media in Ohmanim): ${media.join(', ')}`);
   const voiced = beats.some((b) => b.voice && project.assets?.[b.voice]);
   const music = project.music?.asset && project.assets?.[project.music.asset] ? project.music : null;
-  const audible = voiced || !!music || beats.some((b) => soundsOf(project, b).length);
+  const audible = voiced || !!music || beats.some((b) => soundsOf(project, b).length || clipSounds(project, b).length);
   if (audible) L.push('Sound uses self.add_sound; rendering it on a computer needs ffmpeg.');
   const captioned = beats.some((b) => b.caption && b.voice && project.assets?.[b.voice]);
   if (captioned) L.push(`Captions are written next to this file as ${cls}.vtt and ${cls}.srt, timed to the video.`);
@@ -314,6 +363,7 @@ export function exportPython(project, { mode = 'slides' } = {}) {
   if (fancy) L.push(BG_HELPERS);
   const pictured = project.slides.some((s) => s.objects.some(hasImage));
   if (pictured) L.push(IMAGE_HELPERS);
+  if (project.slides.some((s) => s.objects.some(hasVideo))) L.push(VIDEO_HELPERS);
   if (audible) L.push(AUDIO_HELPERS);
   if (music) L.push(MUSIC_HELPERS);
   if (captioned) L.push(CAPTION_HELPERS);
@@ -350,12 +400,13 @@ export function exportPython(project, { mode = 'slides' } = {}) {
     }
     const clip = beat.voice && project.assets?.[beat.voice];
     // A click lasts as long as its animations, its narration and its hold time, whichever is longest.
-    const len = Math.max(beat.hold || 0, clip ? clip.dur : 0);
+    const len = Math.max(beat.hold || 0, clip ? clip.dur : 0, beat.clip || 0);
     if (len > 0) w('_click = self.renderer.time');
     if (clip) {
       const caps = captionCues(beat.caption, clip.dur).map(([a, b, t]) => `(${n(a)}, ${n(b)}, ${str(t)})`);
       w(`_say(self, ${str(mediaFile(beat.voice, clip))}${caps.length ? `, [${caps.join(', ')}]` : ''})`);
     }
+    for (const sd of clipSounds(project, beat)) w(`_sfx(self, ${str(clipSoundFile(sd.asset))}${sd.vol < 1 ? `, ${n(dB(sd.vol))}` : ''})`);
     for (const sd of soundsOf(project, beat)) w(`_sfx(self, ${str(mediaFile(sd.asset, project.assets[sd.asset]))}${sd.vol < 1 ? `, ${n(dB(sd.vol))}` : ''})`);
     for (const phase of beat.phases) {
       const anims = [], after = [], adds = [];
@@ -372,7 +423,8 @@ export function exportPython(project, { mode = 'slides' } = {}) {
         } else if (a.kind === 'enter') {
           w(`${ref} = ${objectPy(a.obj)}`);
           const anim = DRAWN.includes(a.anim) && hasImage(a.obj) ? 'FadeIn' : a.anim;
-          if (ENTER[anim]) anims.push(ENTER[anim](ref)); else adds.push(ref);
+          // A clip keeps playing while it fades or grows in.
+          if (ENTER[anim]) anims.push(hasVideo(a.obj) ? ENTER[anim](ref).replace(/\)$/, ', suspend_mobject_updating=False)') : ENTER[anim](ref)); else adds.push(ref);
         } else if (a.kind === 'emph' && EMPH[a.anim]) {
           const o = a.obj || project.slides[beat.slide].objects.find((q) => q.id === a.id);
           anims.push(a.anim === 'Indicate' && o && hasImage(o) ? `_pulse(${ref})` : EMPH[a.anim](ref));

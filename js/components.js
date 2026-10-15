@@ -144,6 +144,13 @@ def('image', {
     { key: 'opacity', label: 'Opacity', type: 'range', step: 0.05, min: 0, max: 1 }],
   prims: (o) => [{ t: 'image', asset: o.asset, w: o.w, h: o.h, opacity: o.opacity ?? 1 }],
 });
+// A video clip. It starts playing on the click it enters and that click lasts until it ends.
+def('video', {
+  name: 'Video clip', sub: 'Video', cat: 'Media', noLabel: true, icon: 'film', defaults: { asset: null, w: 6, h: 3.375, opacity: 1, vol: 1, enter: 'FadeIn' },
+  props: [{ key: 'w', label: 'Width', type: 'number', step: 0.25, min: 0.1 }, { key: 'h', label: 'Height', type: 'number', step: 0.25, min: 0.1 },
+    { key: 'opacity', label: 'Opacity', type: 'range', step: 0.05, min: 0, max: 1 }, { key: 'vol', label: 'Volume', type: 'range', step: 0.05, min: 0, max: 1 }],
+  prims: (o) => [{ t: 'image', asset: o.asset, w: o.w, h: o.h, opacity: o.opacity ?? 1, video: true }],
+});
 def('circle', {
   name: 'Circle', sub: 'Basic', cat: 'Shapes', fillable: true, noLabel: true, defaults: { r: 1, color: '#58c4dd', fill: '#58c4dd', fo: 0 },
   props: [{ key: 'r', label: 'Radius', type: 'number', step: 0.25 }],
@@ -262,7 +269,7 @@ export const CATEGORIES = [
   { name: 'Shapes', subs: ['Basic', 'Lines', 'Draw'] },
   { name: 'Text', subs: ['Text'] },
   { name: 'Graphs', subs: ['Plots'] },
-  { name: 'Media', subs: ['Pictures'] },
+  { name: 'Media', subs: ['Pictures', 'Video'] },
 ];
 
 export const ENTER_ANIMS = ['Create', 'FadeIn', 'Write', 'GrowFromCenter', 'DrawBorderThenFill', 'None'];

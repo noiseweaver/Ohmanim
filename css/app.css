@@ -443,7 +443,6 @@ button.slidetheme svg { flex: none; }
 #zoomFit { min-width: 52px; font-variant-numeric: tabular-nums; font-size: 12px; padding: 4px 6px; justify-content: center; }
 #stage.panning, #stage.space { cursor: grab; }
 #stage.panning { cursor: grabbing; }
-.stagebox { position: relative; }
 .inplace { position: absolute; z-index: 5; background: color-mix(in srgb, var(--panel) 85%, transparent); color: var(--text); border: 1px solid var(--sel); border-radius: 4px; padding: 0 4px; outline: none; text-align: center; box-shadow: 0 0 0 3px color-mix(in srgb, var(--sel) 25%, transparent); }
 .alignrow { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 6px; }
 .alignrow button { padding: 4px; }
@@ -461,3 +460,6 @@ button.slidetheme svg { flex: none; }
 .musicrow .ic { width: 14px; height: 14px; flex: none; color: var(--accent); }
 .musicrow span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .musicrow small { color: var(--muted); }
+
+/* Video clips playing over the slide (preview and present) */
+.clipvid { position: absolute; object-fit: fill; pointer-events: none; z-index: 1; background: #000; }

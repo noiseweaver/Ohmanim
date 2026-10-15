@@ -11,6 +11,8 @@ _installed = False
 TEX_SVG = {}  # "environment|expression" -> SVG markup, rendered by MathJax in the host
 MISSING = []  # LaTeX the host still has to render; the scene is re-run once they arrive
 IMAGES = []  # image file names the host can draw, in the order it holds their bitmaps
+VIDEOS = []  # video clip file names the host holds frames for, in order
+FPS = [30]
 _PLACEHOLDER = (
     '<svg xmlns="http://www.w3.org/2000/svg" width="10pt" height="10pt" viewBox="0 0 10 10">'
     '<path d="M0 0H10V10H0Z"/></svg>'
@@ -40,7 +42,7 @@ def _patch():
     from manim.utils import tex_file_writing
     from manim.mobject.text import tex_mobject
 
-    from .cairo_shim import REC, IMAGE
+    from .cairo_shim import REC, IMAGE, VIDEO
 
     def reset(self):
         REC.ops = []
@@ -57,7 +59,8 @@ def _patch():
         # opacity (set_opacity, FadeIn) lives in its alpha channel, so compare it with the original.
         for m in image_mobjects:
             src = getattr(m, "_mv_src", None)
-            if src not in IMAGES:
+            clip = getattr(m, "_mv_video", None)
+            if src not in IMAGES and clip not in VIDEOS:
                 continue
             alpha = 1.0
             pa, orig = getattr(m, "pixel_array", None), getattr(m, "orig_alpha_pixel_array", None)
@@ -67,7 +70,12 @@ def _patch():
             if alpha <= 0:
                 continue
             ul, ur, dl = m.points[0], m.points[1], m.points[2]
-            REC.ops.extend((IMAGE, IMAGES.index(src), ul[0], ul[1], ur[0], ur[1], dl[0], dl[1], alpha))
+            if clip in VIDEOS:
+                # A clip shows the frame for how long it has been playing.
+                frame = int(round(getattr(m, "_mv_time", 0.0) * FPS[0]))
+                REC.ops.extend((VIDEO, VIDEOS.index(clip), ul[0], ul[1], ur[0], ur[1], dl[0], dl[1], alpha, frame))
+            else:
+                REC.ops.extend((IMAGE, IMAGES.index(src), ul[0], ul[1], ur[0], ur[1], dl[0], dl[1], alpha))
 
     Camera.display_multiple_image_mobjects = display_multiple_image_mobjects
     Camera.reset = reset
@@ -180,7 +188,7 @@ def make_slide_class():
     return Slide
 
 
-def render(code, scene_name=None, sink=None, width=1280, height=720, fps=30, tex=None, images=None):
+def render(code, scene_name=None, sink=None, width=1280, height=720, fps=30, tex=None, images=None, videos=None):
     """Execute `code`, render `scene_name` (or the last Scene subclass) to `sink`.
 
     sink(kind, payload, n, bg): kind is "frame" (payload = float32 op bytes,
@@ -197,6 +205,8 @@ def render(code, scene_name=None, sink=None, width=1280, height=720, fps=30, tex
     if tex:
         TEX_SVG.update(tex)
     IMAGES[:] = list(images or [])
+    VIDEOS[:] = list(videos or [])
+    FPS[0] = fps
     WebFileWriter.sink = sink or (lambda *a: None)
     MISSING.clear()
     from manim.mobject.svg import svg_mobject

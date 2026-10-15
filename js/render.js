@@ -66,7 +66,7 @@ export function worldPrims(o) {
       const pts = sampleArc(p.cx, p.cy, p.r, 0, TAU); pts.pop();
       out.push({ k: 'path', pts: pts.map(tf), closed: true, stroke, sw, fill, fo });
     } else if (p.t === 'image') {
-      out.push({ k: 'image', x: o.x, y: o.y, w: p.w * s, h: p.h * s, rot: o.rot || 0, asset: p.asset, opacity: p.opacity });
+      out.push({ k: 'image', x: o.x, y: o.y, w: p.w * s, h: p.h * s, rot: o.rot || 0, asset: p.asset, opacity: p.opacity, ...(p.video ? { video: true } : {}) });
     } else if (p.t === 'text' || p.t === 'math') {
       const [x, y] = tf([p.x, p.y]);
       out.push({ k: p.t, x, y, text: p.text, size: p.size * s, rot: o.rot || 0, color: o.color, font: fontOf(o), bold: !!o.bold, italic: !!o.italic });
@@ -156,8 +156,11 @@ export function primsSVG(prims, opts = {}) {
       const a = media.assets?.[p.asset];
       const rot = p.rot ? ` rotate(${f(-p.rot)})` : '';
       const box = `x="${f(-p.w / 2)}" y="${f(-p.h / 2)}" width="${f(p.w)}" height="${f(p.h)}"`;
-      out += `<g transform="translate(${f(p.x)} ${f(-p.y)})${rot}"${op < 1 ? ` opacity="${f(op)}"` : ''}>` + (a
-        ? `<image href="${assetURL(a)}" ${box} preserveAspectRatio="none"/>`
+      const href = a && (p.video ? (a.poster ? assetURL({ src: a.poster }) : '') : assetURL(a));
+      out += `<g transform="translate(${f(p.x)} ${f(-p.y)})${rot}"${op < 1 ? ` opacity="${f(op)}"` : ''}>` + (href
+        ? `<image href="${href}" ${box} preserveAspectRatio="none"/>` +
+          // In the editor a clip shows a play badge so it reads as video, not a picture.
+          (p.video && opts.hit ? `<g opacity="0.85"><circle r="${f(Math.min(p.w, p.h) * 0.12)}" fill="#000000" fill-opacity="0.55"/><path d="M${f(-Math.min(p.w, p.h) * 0.04)} ${f(-Math.min(p.w, p.h) * 0.06)}L${f(Math.min(p.w, p.h) * 0.065)} 0L${f(-Math.min(p.w, p.h) * 0.04)} ${f(Math.min(p.w, p.h) * 0.06)}Z" fill="#ffffff"/></g>` : '')
         // No picture yet (or it went missing): a dashed frame with a mountain, so the object stays visible.
         : `<rect ${box} fill="#80808033" stroke="#808080" stroke-width="0.03" stroke-dasharray="0.15 0.1"/>` +
           `<path d="M${f(-p.w * 0.3)} ${f(p.h * 0.25)}L${f(-p.w * 0.08)} ${f(-p.h * 0.1)}L${f(p.w * 0.05)} ${f(p.h * 0.08)}L${f(p.w * 0.15)} ${f(-p.h * 0.02)}L${f(p.w * 0.3)} ${f(p.h * 0.25)}Z" fill="#808080"/>`) + '</g>';
@@ -284,7 +287,9 @@ export function timeline(project) {
       if (trans.length) phases.push(trans);
       if (s.enter.length) phases.push(s.enter);
       if (s.emph.length) phases.push(s.emph);
-      beats.push({ slide: si, step: k, first: i === 0, phases, voice: voice[k] || null, caption: (voice[k] && slide.captions?.[k]) || '', hold: holdOf(project, slide, k), sounds: sounds[k] || [] });
+      // Video clips that enter on this click play to their end before the next one.
+      const clip = Math.max(0, ...s.enter.filter((a) => a.obj.type === 'video').map((a) => project.assets?.[a.obj.asset]?.dur || 0));
+      beats.push({ slide: si, step: k, first: i === 0, phases, clip, voice: voice[k] || null, caption: (voice[k] && slide.captions?.[k]) || '', hold: holdOf(project, slide, k), sounds: sounds[k] || [] });
     });
   });
   return beats;

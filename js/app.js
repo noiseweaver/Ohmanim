@@ -565,7 +565,7 @@ $('#palette').addEventListener('dragstart', (e) => {
 });
 $('#palette').addEventListener('dragend', () => openShelf(null));
 $('#libExport').addEventListener('click', () => {
-  download(new Blob([JSON.stringify({ kind: 'manimvis-library', version: 1, ...library }, null, 1)], { type: 'application/json' }), 'manim-visual-shapes.json');
+  download(new Blob([JSON.stringify({ kind: 'manimvis-library', version: 1, ...library }, null, 1)], { type: 'application/json' }), 'ohmanim-shapes.json');
 });
 $('#libImport').addEventListener('click', () => $('#libFile').click());
 $('#libFile').addEventListener('change', async (e) => {
@@ -583,7 +583,7 @@ $('#libFile').addEventListener('change', async (e) => {
     }
     saveLibrary(); renderPalette();
     toast(`Added ${added} shape${added === 1 ? '' : 's'} to your library`);
-  } catch { toast('That file is not a Manim Visual shape library'); }
+  } catch { toast('That file is not a Ohmanim shape library'); }
   e.target.value = '';
 });
 
@@ -864,7 +864,7 @@ $('#fileInput').addEventListener('change', async (e) => {
     edit(() => { project = p; cur = 0; setSelection([]); });
     renderAll();
     toast('Opened ' + f.name);
-  } catch { toast('That file is not a Manim Visual lesson'); }
+  } catch { toast('That file is not a Ohmanim lesson'); }
   e.target.value = '';
 });
 $('#title').addEventListener('input', (e) => edit(() => (project.title = e.target.value), 'title'));

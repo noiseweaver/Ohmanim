@@ -1,6 +1,6 @@
 {
-  "name": "Manim Visual",
-  "short_name": "Manim Visual",
+  "name": "Ohmanim",
+  "short_name": "Ohmanim",
   "description": "Build Manim slideshows for teaching electronics, entirely in the browser.",
   "start_url": "./",
   "scope": "./",

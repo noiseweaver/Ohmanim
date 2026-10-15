@@ -1,8 +1,47 @@
-# Manim Visual
+# Ohmanim
 
-Build [Manim](https://www.manim.community/) slideshows for teaching by arranging things on a canvas, with no code. The focus is electronics (circuit symbols, wires, current flow, signal graphs), and it also covers general shapes, text, LaTeX and function plots.
+**Ohmanim** is a visual editor for [Manim](https://www.manim.community/) lessons. You arrange circuits, shapes, text, maths and graphs on a canvas, decide what appears on each click, record a voiceover, and get either a slideshow to present or a narrated MP4. You never write code, but the Manim script is always there if you want it.
 
-It is a static web app (installable PWA) hosted on GitHub Pages. Everything runs in your browser and lessons autosave locally.
+It focuses on teaching electronics (circuit symbols, wires, current flow, signal plots) and works just as well for general lessons.
+
+**Open it:** https://noiseweaver.github.io/ohmanim/
+
+## Runs entirely in your browser
+
+There is no server and no account. The editor, the recorder and **real Manim itself** all run on your machine: Manim Community Edition runs under WebAssembly (Pyodide) in a background worker and encodes the video with WebCodecs. Lessons, images and voice clips are saved in your browser (localStorage and IndexedDB). It installs as an app (PWA) and keeps working offline after the first render has cached Python and Manim.
+
+## Features
+
+- **Canvas editor** with electronics parts (resistors, capacitors, sources, switches, transistors, op-amps and more), wires that snap to terminals, shapes, freeform drawing, text in 18 bundled fonts, LaTeX maths and function plots.
+- **Slides that animate.** Each object enters on a click you choose. Duplicating a slide continues the scene: anything you move, recolour or change morphs into place, and anything you delete fades out. Emphasis effects include Indicate, Circumscribe, Wiggle, Flash and a current-flow pulse along wires.
+- **Timeline** under the canvas: one track per object and one column per click. Drag blocks between clicks, add emphases and group tracks.
+- **Voiceover.** Record a clip per click, or narrate a whole take while presenting. Clips pace the slides and are mixed into the rendered video.
+- **Captions** for each clip, exported as separate timed WebVTT and SRT files rather than burned into the video.
+- **Backgrounds:** colours, gradients, images (fill, fit, stretch or tile), patterns such as graph paper, perfboard and polar grids, and a vignette, plus presets like Blueprint and Oscilloscope. Set one per lesson or per slide.
+- **Editing comfort:** zoom and pan, smart guides, align and distribute, typing straight onto the canvas, copy and paste between slides and lessons, undo and redo, and your own reusable shapes.
+- **Themes:** 27 editor colour themes and 4 styles, and slide themes that recolour a whole lesson.
+- **Present** from the live preview or from the rendered video, with speaker notes.
+- **Export** the generated Manim or manim-slides Python, edit it, or paste any Manim scene and render that instead.
+
+## Using it locally
+
+There is no build step. Serve the folder and open it:
+
+```bash
+git clone https://github.com/Noiseweaver/ohmanim
+cd ohmanim
+python3 -m http.server 8000     # then open http://localhost:8000
+```
+
+Pyodide and Manim's Python packages are downloaded from jsDelivr and PyPI on the first render (about 60 MB) and cached by the browser.
+
+## Limitations
+
+- **Browser:** rendering needs WebCodecs (current Chrome, Edge, Safari or Firefox). Recording needs microphone access over HTTPS or localhost.
+- **Manim features:** 3D scenes and the OpenGL renderer are not supported. Shape boolean operations (`Union`, `Difference` and the like) work, but produce fine polylines instead of exact curves.
+- **Speed:** rendering in WebAssembly is slower than on a desktop install, and the first render waits for the download.
+- **Storage** lives in this browser. Use Save to keep a lesson file, or to move it to another computer.
+- **Captions** are typed by hand; there is no automatic transcription.
 
 ## How it works
 
@@ -15,7 +54,7 @@ Everything runs in the browser, including Manim itself.
    - **LaTeX** (used by `MathTex` and `Tex`) becomes [MathJax](https://www.mathjax.org/): the scene runs once to collect every formula, MathJax typesets them on the page, and the scene runs again with SVG shaped like dvisvgm's output. `MathTex` parts, `get_part_by_tex` and colouring by part keep working.
    - **PyAV/ffmpeg** becomes [WebCodecs](https://developer.mozilla.org/docs/Web/API/WebCodecs_API) plus [mp4-muxer](https://github.com/Vanilagy/mp4-muxer), producing an MP4 you can download.
    - **skia-pathops** (used by `Union`, `Intersection`, `Difference`, `Exclusion`) becomes [Shapely](https://shapely.readthedocs.io/) (GEOS), loaded only when a scene uses them. Results are fine polylines rather than exact curves.
-   - OpenGL and sound are stubbed; scenes that need them won't render.
+   - OpenGL is stubbed, so 3D scenes won't render. `add_sound` clips are mixed into the MP4's soundtrack.
 3. **Presenting.** After a render, Present plays the Manim video and pauses at every `next_slide()`, like manim-slides. If the slides changed since the last render, it falls back to the live preview.
 4. **Code.** The Code button shows the generated script. You can edit it, or paste any Manim scene, and render that instead. The same file also renders on a computer with `manim` or `manim-slides`.
 
@@ -67,6 +106,6 @@ Shortcuts: `V` select, `W` wire, `P` draw, `R` / `Shift+R` rotate, `Del` delete,
 | `js/app.js` | Editor UI |
 | `sw.js`, `manifest.webmanifest` | Offline support and install |
 
-No build step: serve the folder (`python3 -m http.server`) and open it. Pyodide loads from jsDelivr. Pushing to `main` deploys via `.github/workflows/pages.yml`.
+Pushing to `main` deploys the site with `.github/workflows/pages.yml` (Settings → Pages → Source: GitHub Actions).
 
 Adding a component means adding one `def(...)` in `js/components.js` with its primitives; the palette, preview, morphing and export pick it up automatically.

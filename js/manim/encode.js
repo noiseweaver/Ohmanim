@@ -3,11 +3,13 @@ import { drawOps } from './draw.js';
 import { Muxer, ArrayBufferTarget } from '../../vendor/mp4-muxer.mjs';
 
 async function pickCodec(width, height, fps) {
-  // H.264 level 4.0 covers 1080p at 30 fps; 1080p at 60 fps needs level 4.2.
-  const big = width * height * fps > 1920 * 1088 * 30;
+  // Constrained Baseline H.264 has no B-frames. Some hardware encoders (Windows) emit
+  // B-frames for High profile, whose out-of-order timestamps the MP4 muxer rejects.
+  // Level 3.1 covers 720p30, 4.0 covers 1080p30 and 4.2 covers 1080p60.
+  const rate = width * height * fps;
+  const level = rate <= 1280 * 720 * 30 ? '1F' : rate <= 1920 * 1088 * 30 ? '28' : '2A';
   const candidates = [
-    { codec: big ? 'avc1.64002A' : 'avc1.640028', mux: 'avc' }, // H.264 High 4.2 / 4.0
-    { codec: 'avc1.42E01F', mux: 'avc' }, // H.264 Baseline 3.1
+    { codec: 'avc1.42E0' + level, mux: 'avc' }, // H.264 Constrained Baseline
     { codec: 'vp09.00.40.08', mux: 'vp9' },
   ];
   for (const c of candidates) {

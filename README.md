@@ -19,6 +19,7 @@ There is no server and no account. The editor, the recorder and **real Manim its
 - **Pictures:** add images from the Media menu, by dropping files on the slide, or by pasting. They animate like any object (fade in, move, resize, emphasise) and render as Manim `ImageMobject`s.
 - **Video clips:** import video files as objects. A clip plays on the click it enters, the click lasts until the clip ends, and its sound is mixed in. Rendered in the browser frame by frame, and exported as a small PyAV-backed mobject for desktop Manim.
 - **Sound:** import audio files as narration, add sound effects to any click, and lay a looping music bed under the lesson that dips while narration plays. All of it is mixed into the rendered video.
+- **Level meter:** a small mixer next to Play slide, in Present and in the audio editor shows the output level of narration, sounds, music and video clips, plus the total, with peak hold.
 - **Audio editor:** trim, fades and volume for any sound, plus a voiceover chain: click removal, noise removal, de-esser, pop control, three-band EQ, compressor and loudness matching.
 - **Captions** for each clip, exported as separate timed WebVTT and SRT files rather than burned into the video.
 - **Backgrounds:** colours, gradients, images (fill, fit, stretch or tile), patterns such as graph paper, perfboard and polar grids, and a vignette, plus presets like Blueprint and Oscilloscope. Set one per lesson or per slide.
@@ -110,6 +111,7 @@ Shortcuts: `V` select, `W` wire, `P` draw, `R` / `Shift+R` rotate, `Del` delete,
 | `py/manimweb/` | Pure-Python stand-ins for Cairo, Pango, LaTeX and Manim's other native dependencies |
 | `js/icons.js`, `js/themes.js` | Icon sprite (Lucide), the editor's themes and styles, and slide themes |
 | `js/backgrounds.js` | Slide backgrounds: SVG preview and the Manim code that draws them |
+| `js/meter.js` | Output level meters: routes all playback through one Web Audio graph with an analyser per channel |
 | `js/audiofx.js`, `js/audioedit.js`, `js/trimvideo.js` | Audio processing (noise removal, de-esser, EQ, compressor, loudness), the audio editor and the clip trim dialog |
 | `js/voice.js`, `js/store.js` | Narration recording, playback and WAV export; IndexedDB storage for images and clips |
 | `js/motion.js` | Small feedback animations (menus, slide moves, new objects), off under reduced motion |

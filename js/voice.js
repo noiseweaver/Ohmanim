@@ -1,6 +1,7 @@
 // Narration: record from the microphone, play clips back, and turn them into the
 // forms other parts need (PCM for the in-browser renderer, WAV for desktop Manim).
 import { assetURL, assetBytes } from './backgrounds.js';
+import { route } from './meter.js';
 
 export const SAMPLE_RATE = 48000;
 
@@ -109,7 +110,7 @@ export const onClipStart = (fn) => { onStart = fn; };
 export function playClip(asset) {
   stopClip();
   if (!asset) return Promise.resolve();
-  narr ||= new Audio();
+  if (!narr) { narr = new Audio(); route(narr, 'voice'); }
   const a = narr;
   return new Promise((resolve) => {
     let timer = 0;
@@ -135,6 +136,7 @@ const effects = new Set();
 export function playSound(asset, vol = 1) {
   if (!asset) return;
   const a = new Audio(assetURL(asset));
+  route(a, 'sfx');
   a.volume = Math.max(0, Math.min(1, vol));
   effects.add(a);
   a.onended = a.onerror = () => effects.delete(a);
@@ -148,6 +150,7 @@ export function startMusic(m, asset) {
   stopMusic();
   if (!m || !asset) return;
   const a = new Audio(assetURL(asset));
+  route(a, 'music');
   a.loop = true;
   a.volume = m.vol ?? 0.3;
   a.play().catch(() => {});

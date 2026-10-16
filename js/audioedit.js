@@ -2,6 +2,7 @@
 // (narration, sound effects, music). Edits are applied to a copy; the original is kept so
 // opening the editor again starts from it with the same settings.
 import { decode, SAMPLE_RATE } from './voice.js';
+import { channelInput, Mixer } from './meter.js';
 import { processAudio, peaks, wavBytes, findClicks, DEFAULT_EDIT, VOICE_PRESET } from './audiofx.js';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -47,6 +48,7 @@ function dialog() {
     </div>
   </form>`;
   document.body.appendChild(d);
+  $('#audPlay', d).after(new Mixer(document.createDocumentFragment()).el);
   return d;
 }
 
@@ -129,12 +131,15 @@ export async function editAudio(id, assets) {
   const stop = () => { try { src?.stop(); } catch {} src = null; cancelAnimationFrame(raf); $('#audPlay span', d).textContent = 'Play'; draw(); };
   const play = () => {
     if (src) return stop();
-    ac ||= new AudioContext();
+    // Through the shared output, so the level meter shows the preview.
+    const io = channelInput('voice');
+    ac = io?.ctx || ac || new AudioContext();
+    if (ac.state === 'suspended') ac.resume().catch(() => {});
     const out = processAudio(pcm, SAMPLE_RATE, e);
     if (!out.length) return;
     const buf = ac.createBuffer(1, out.length, SAMPLE_RATE);
     buf.copyToChannel(out, 0);
-    src = ac.createBufferSource(); src.buffer = buf; src.connect(ac.destination);
+    src = ac.createBufferSource(); src.buffer = buf; src.connect(io?.node || ac.destination); io?.start();
     src.onended = () => { if (src) stop(); };
     src.start(); playStart = ac.currentTime;
     $('#audPlay span', d).textContent = 'Stop';
@@ -180,7 +185,7 @@ export async function editAudio(id, assets) {
   $('#audReset', d).onclick = () => { stop(); Object.assign(e, DEFAULT_EDIT, { end: dur }); show(); };
 
   return new Promise((resolve) => {
-    const finish = (v) => { stop(); ac?.close(); ac = null; d.onclose = null; d.close(); resolve(v); };
+    const finish = (v) => { stop(); if (ac && !channelInput('voice')) ac.close(); ac = null; d.onclose = null; d.close(); resolve(v); };
     $('#audCancel', d).onclick = () => finish(null);
     d.onclose = () => finish(null);
     $('#audApply', d).onclick = async () => {

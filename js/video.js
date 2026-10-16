@@ -2,6 +2,7 @@
 // clips as real <video> elements laid over an SVG slide while previewing or presenting.
 import { assetURL } from './backgrounds.js';
 import { decode } from './voice.js';
+import { route } from './meter.js';
 
 const blobToDataURL = (blob) => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = () => reject(r.error); r.readAsDataURL(blob); });
 const once = (el, ev) => new Promise((resolve, reject) => {
@@ -140,6 +141,7 @@ export class VideoLayer {
       if (!v) {
         v = document.createElement('video');
         v.className = 'clipvid'; v.playsInline = true; v.preload = 'auto';
+        route(v, 'clips');
         v.src = videoURL(a); v.poster = posterURL(a);
         if (a.posterless) v.addEventListener('playing', () => setTimeout(() => {
           if (!a.posterless || v.readyState < 2) return;

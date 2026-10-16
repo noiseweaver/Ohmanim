@@ -495,3 +495,16 @@ button.slidetheme svg { flex: none; }
 #trimPos::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--text); }
 #trimPos::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--text); border: 0; }
 @media (max-width: 560px) { .audgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Output level meters */
+.mixer { display: inline-flex; gap: 2px; align-items: stretch; height: 24px; padding: 3px 4px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--field); flex: none; box-sizing: border-box; }
+.mbar { position: relative; width: 5px; border-radius: 1px; background: color-mix(in srgb, var(--muted) 18%, transparent); overflow: hidden; }
+.mbar.master { width: 9px; margin-left: 2px; }
+.mbar i { position: absolute; inset: 0; clip-path: inset(100% 0 0 0); background: linear-gradient(to top, #35c47a 0%, #35c47a 72%, #e3b341 86%, #e5534b 100%); }
+.mbar b { position: absolute; left: 0; right: 0; height: 2px; margin-bottom: -1px; bottom: 0; background: var(--text); opacity: 0; }
+.mbar b.hot { background: #e3b341; }
+.mbar b.clip { background: #e5534b; }
+.mbar em { display: none; }
+.mixer:not(.live) .mbar i { clip-path: inset(100% 0 0 0) !important; }
+.mixer:not(.live) .mbar b { opacity: 0 !important; }
+.present-ui .mixer { background: rgba(0,0,0,.4); border-color: rgba(255,255,255,.15); }

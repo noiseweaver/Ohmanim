@@ -13,6 +13,7 @@ import { editAudio } from './audioedit.js';
 import { startRecording, releaseMic, playClip, stopClip, decode, toWav, fmtDur, importAudio, playSound, stopSounds, startMusic, stopMusic, SAMPLE_RATE, onClipStart, nowPlaying } from './voice.js';
 import { wavBytes } from './audiofx.js';
 import { trimVideo } from './trimvideo.js';
+import { Mixer } from './meter.js';
 import { THEMES, STYLES, loadLook, saveLook, applyLook, themeSwatch, TEXT_ROLES, applySlideTheme, applyRole, slideSwatch, slidePalette } from './themes.js';
 
 installIcons();
@@ -937,6 +938,9 @@ for (const [btn, box, after] of [['#snapBtn', '#snap', () => {}], ['#ghostBtn', 
 }
 
 let slidePlaying = null;
+// Output level meters next to Play slide and in the presenter's controls.
+$('[data-cmd="play"]').after(new Mixer(document.createDocumentFragment()).el);
+$('#presentPos').after(new Mixer(document.createDocumentFragment()).el);
 // While narration plays, its block in the timeline fills up to show how far through it is.
 onClipStart(() => {
   const tick = () => {

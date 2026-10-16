@@ -299,6 +299,11 @@ dialog.small { width: min(420px, 94vw); }
 .shapeprev svg { max-width: 90%; height: 96px; }
 .row { display: flex; gap: 8px; align-items: center; }
 .row.wrap { flex-wrap: wrap; }
+/* Dialogs never scroll sideways: rows wrap, grid cells and fields shrink to fit. */
+dialog { max-width: calc(100vw - 16px); overflow-x: hidden; overscroll-behavior: contain; }
+.dlg .row { flex-wrap: wrap; }
+.dlg > *, .dlg .fld, .audgrid > * { min-width: 0; }
+.dlg input:not([type=checkbox]):not([type=radio]), .dlg select, .dlg textarea, .dlg canvas, .dlg video { max-width: 100%; box-sizing: border-box; }
 .chk { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
 
 #lookDlg { width: min(940px, 96vw); }

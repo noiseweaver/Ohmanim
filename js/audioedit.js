@@ -2,7 +2,7 @@
 // (narration, sound effects, music). Edits are applied to a copy; the original is kept so
 // opening the editor again starts from it with the same settings.
 import { decode, SAMPLE_RATE } from './voice.js';
-import { processAudio, peaks, wavBytes, DEFAULT_EDIT, VOICE_PRESET } from './audiofx.js';
+import { processAudio, peaks, wavBytes, findClicks, DEFAULT_EDIT, VOICE_PRESET } from './audiofx.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -26,6 +26,7 @@ function dialog() {
     <div class="audvoice">
       <div class="row"><h3>Voice</h3><span class="grow"></span><button type="button" id="audPreset"><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg><span>Voiceover preset</span></button></div>
       <div class="audgrid">
+        <label class="fld wide2"><span>Click removal <b data-v="declick"></b> <small id="audClicks"></small></span><input id="audDeclick" type="range" min="0" max="1" step="0.05"></label>
         <label class="fld wide2"><span>Noise removal <b data-v="denoise"></b></span><input id="audDenoise" type="range" min="0" max="1" step="0.05"></label>
         <label class="fld wide2"><span>De-esser <b data-v="deess"></b></span><input id="audDeess" type="range" min="0" max="1" step="0.05"></label>
         <label class="fld wide2"><span>Compressor</span><select id="audComp"><option value="0">Off</option><option value="1">Light (2:1)</option><option value="2">Medium (3:1)</option><option value="3">Strong (4:1)</option></select></label>
@@ -68,11 +69,26 @@ export async function editAudio(id, assets) {
   let pk = null, ac = null, src = null, playStart = 0, raf = 0;
 
   const fields = { start: '#audStart', end: '#audEnd', fadeIn: '#audFadeIn', fadeOut: '#audFadeOut', gain: '#audGain',
-    denoise: '#audDenoise', deess: '#audDeess', comp: '#audComp', eqLow: '#audEqLow', eqMid: '#audEqMid', eqHigh: '#audEqHigh' };
+    declick: '#audDeclick', denoise: '#audDenoise', deess: '#audDeess', comp: '#audComp', eqLow: '#audEqLow', eqMid: '#audEqMid', eqHigh: '#audEqHigh' };
   const dB = (v) => (v > 0 ? '+' : '') + v + ' dB', pct = (v) => (v ? Math.round(v * 100) + '%' : 'off');
+  // Clicks found with the current sensitivity, in seconds of the original, marked on the waveform.
+  let clicks = [], clickKey = '', clickTimer = 0;
+  const scanClicks = () => {
+    const key = e.declick ? [e.declick, e.start, e.end].join() : '';
+    if (key === clickKey) return;
+    clickKey = key; clearTimeout(clickTimer);
+    if (!key) { clicks = []; $('#audClicks', d).textContent = ''; draw(); return; }
+    clickTimer = setTimeout(() => {
+      const a = Math.round(e.start * SAMPLE_RATE);
+      clicks = findClicks(pcm.slice(a, Math.round(e.end * SAMPLE_RATE)), SAMPLE_RATE, e.declick).map(([s, t]) => [(s + a) / SAMPLE_RATE, (t + a) / SAMPLE_RATE]);
+      $('#audClicks', d).textContent = clicks.length ? `· ${clicks.length} found` : '· none found';
+      draw();
+    }, 150);
+  };
   const labels = () => {
     $('#audGainV', d).textContent = dB(e.gain);
     for (const b of d.querySelectorAll('[data-v]')) { const k = b.dataset.v; b.textContent = k.startsWith('eq') ? dB(e[k]) : pct(e[k]); }
+    scanClicks();
   };
   const show = () => {
     for (const k in fields) $(fields[k], d).value = k === 'comp' ? String(e.comp) : r2(e[k]);
@@ -105,6 +121,9 @@ export async function editAudio(id, assets) {
     // Trim handles.
     ctx.fillStyle = css('--text') || '#fff';
     for (const hx of [xa, xb]) { ctx.fillRect(hx - k, 0, 2 * k, cv.height); ctx.fillRect(hx - 4 * k, mid - 10 * k, 8 * k, 20 * k); }
+    ctx.fillStyle = css('--danger') || '#f55'; ctx.globalAlpha = 0.85;
+    for (const [a, b] of clicks) ctx.fillRect(x(a) - k, 0, Math.max(2 * k, x(b) - x(a)), 6 * k);
+    ctx.globalAlpha = 1;
     if (head != null) { ctx.fillStyle = css('--danger') || '#f55'; ctx.fillRect(x(head) - k, 0, 2 * k, cv.height); }
   }
   const stop = () => { try { src?.stop(); } catch {} src = null; cancelAnimationFrame(raf); $('#audPlay span', d).textContent = 'Play'; draw(); };
@@ -165,7 +184,7 @@ export async function editAudio(id, assets) {
     $('#audCancel', d).onclick = () => finish(null);
     d.onclose = () => finish(null);
     $('#audApply', d).onclick = async () => {
-      const plain = ['clean', 'level', 'gain', 'fadeIn', 'fadeOut', 'denoise', 'plosive', 'deess', 'comp', 'eqLow', 'eqMid', 'eqHigh'].every((k) => !e[k]) && e.start <= 0.001 && e.end >= dur - 0.001;
+      const plain = ['clean', 'level', 'gain', 'fadeIn', 'fadeOut', 'declick', 'denoise', 'plosive', 'deess', 'comp', 'eqLow', 'eqMid', 'eqHigh'].every((k) => !e[k]) && e.start <= 0.001 && e.end >= dur - 0.001;
       if (plain) return finish(base === asset ? null : { restore: baseId });
       const out = processAudio(pcm, SAMPLE_RATE, e);
       const src = await dataURL(wavBytes(out, SAMPLE_RATE), 'audio/wav');

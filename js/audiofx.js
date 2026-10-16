@@ -1,9 +1,9 @@
 // Audio clean-up and shaping for narration, sound effects and music. Pure functions on mono
 // Float32 PCM, so they run the same in the editor preview and when an edit is applied.
 
-export const DEFAULT_EDIT = { start: 0, end: null, fadeIn: 0, fadeOut: 0, gain: 0, denoise: 0, plosive: false, eqLow: 0, eqMid: 0, eqHigh: 0, deess: 0, comp: 0, clean: false, level: false };
+export const DEFAULT_EDIT = { start: 0, end: null, fadeIn: 0, fadeOut: 0, gain: 0, declick: 0, denoise: 0, plosive: false, eqLow: 0, eqMid: 0, eqHigh: 0, deess: 0, comp: 0, clean: false, level: false };
 // One click to a good voiceover chain.
-export const VOICE_PRESET = { denoise: 0.5, plosive: true, eqLow: -2, eqMid: 2, eqHigh: 1, deess: 0.5, comp: 2, level: true };
+export const VOICE_PRESET = { declick: 0.5, denoise: 0.5, plosive: true, eqLow: -2, eqMid: 2, eqHigh: 1, deess: 0.5, comp: 2, level: true };
 const db = (v) => 10 ** (v / 20);
 
 // Second-order high-pass (RBJ cookbook), in place. Removes rumble, handling noise and hum below `hz`.
@@ -47,6 +47,52 @@ function envelope(x, rate, attackMs, releaseMs) {
   let e = 0;
   for (let i = 0; i < x.length; i++) { const v = Math.abs(x[i]); e = v > e ? v + (e - v) * at : v + (e - v) * rl; out[i] = e; }
   return out;
+}
+
+// Clicks: mouse and keyboard clicks, mouth clicks and other short ticks. Finds moments where
+// the sound above 2.5 kHz jumps far above its level over the surrounding 40 ms for under
+// 40 ms, which speech and sibilance don't do. amount 0..1 sets the sensitivity.
+// Returns [[start, end], ...] in samples.
+export function findClicks(x, rate, amount = 0.5) {
+  const hp = biquad(biquad(x, coeffs('hp', rate, 2500)), coeffs('hp', rate, 2500));
+  const fast = envelope(hp, rate, 0.05, 1.5);
+  // Centred 40 ms RMS of the high band, as the background a click stands out from.
+  const W = Math.round(rate * 0.02), sq = new Float64Array(hp.length + 1);
+  for (let i = 0; i < hp.length; i++) sq[i + 1] = sq[i] + hp[i] * hp[i];
+  const thr = 12 - 7 * amount, floor = 2e-4, maxLen = rate * 0.04, gap = rate * 0.002, pad = Math.round(rate * 0.001);
+  const out = [];
+  let a = -1, last = -1;
+  for (let i = 0; i < hp.length; i++) {
+    const lo = Math.max(0, i - W), hi = Math.min(hp.length, i + W);
+    const ref = Math.sqrt((sq[hi] - sq[lo]) / (hi - lo));
+    if (fast[i] > thr * ref * 0.5 + floor && fast[i] > ref * 2.5) { if (a < 0 || i - last > gap) { if (a >= 0) out.push([a, last]); a = i; } last = i; }
+  }
+  if (a >= 0) out.push([a, last]);
+  return out.filter(([s, e]) => e - s < maxLen).map(([s, e]) => [Math.max(0, s - pad), Math.min(x.length, e + pad * 5)]);
+}
+// Remove clicks: inside each click, the sound above 2.5 kHz is turned down to the level around it
+// and any thump is brought down to the level just before it, with short ramps so nothing pops.
+export function declick(x, rate, amount = 0.5) {
+  const clicks = findClicks(x, rate, amount);
+  if (!clicks.length) return clicks;
+  const low = biquad(x, coeffs('lp', rate, 2500));
+  const ramp = Math.round(rate * 0.001), look = Math.round(rate * 0.01);
+  for (const [s, e] of clicks) {
+    // Level just before (and after) the click, to bring its loudness back to.
+    let ref = 0;
+    for (let i = Math.max(0, s - look); i < s; i++) ref = Math.max(ref, Math.abs(x[i]));
+    for (let i = e; i < Math.min(x.length, e + look); i++) ref = Math.max(ref, Math.abs(x[i]));
+    let pk = 0;
+    for (let i = s; i < e; i++) pk = Math.max(pk, Math.abs(low[i]));
+    const gLow = pk > ref * 1.2 && pk > 0 ? Math.max(0.05, (ref * 1.2) / pk) : 1;
+    const gHigh = 1 - Math.min(0.97, 0.8 + 0.2 * amount);
+    for (let i = Math.max(0, s - ramp); i < Math.min(x.length, e + ramp); i++) {
+      const w = i < s ? (i - (s - ramp)) / ramp : i >= e ? 1 - (i - e) / ramp : 1, sm = 0.5 - 0.5 * Math.cos(Math.PI * w);
+      const hi = x[i] - low[i];
+      x[i] = low[i] * (1 - sm * (1 - gLow)) + hi * (1 - sm * (1 - gHigh));
+    }
+  }
+  return clicks;
 }
 
 // Plosives ("p" and "b" pops) and rumble: a high-pass at 80 Hz, then any burst below 150 Hz
@@ -238,6 +284,7 @@ export function processAudio(pcm, rate, edit = {}) {
   const dur = pcm.length / rate;
   const a = Math.max(0, Math.min(dur, e.start || 0)), b = Math.max(a, Math.min(dur, e.end ?? dur));
   const x = pcm.slice(Math.round(a * rate), Math.round(b * rate));
+  if (e.declick) declick(x, rate, e.declick);
   if (e.denoise) denoise(x, rate, e.denoise);
   if (e.clean) cleanVoice(x, rate); // older edits
   if (e.plosive) plosives(x, rate);

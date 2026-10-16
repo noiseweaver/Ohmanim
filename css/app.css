@@ -433,7 +433,7 @@ button.slidetheme svg { flex: none; }
 .tl-rec .lvl { position: absolute; left: 0; bottom: 0; width: 4px; height: 100%; background: #fff; transform-origin: bottom; transform: scaleY(.15); opacity: .8; }
 .vblk { position: relative; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 1px 7px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--danger) 22%, var(--panel2)); color: var(--text); cursor: pointer; line-height: 18px; overflow: hidden; min-width: 60px; }
 .vblk { isolation: isolate; }
-.vblk i { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in srgb, var(--danger) 35%, transparent); z-index: -1; }
+.vblk i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: color-mix(in srgb, var(--danger) 35%, transparent); z-index: -1; }
 .vblk .ic { width: 12px; height: 12px; position: relative; }
 .vblk .cc { font-size: 9px; font-weight: 700; padding: 0 3px; border: 1px solid currentColor; border-radius: 3px; line-height: 12px; opacity: .8; }
 .menu textarea { margin: 2px 4px 4px; width: 260px; resize: vertical; font: inherit; font-size: 13px; }

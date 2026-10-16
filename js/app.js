@@ -10,7 +10,7 @@ import { bgOf, bgSVG, bgKey, isLight, BG_DEFAULT, FILLS, PATTERNS, FITS, PRESETS
 import { saveAssets, loadAssets, pruneAssets } from './store.js';
 import { importVideo, extractFrames, VideoLayer } from './video.js';
 import { editAudio } from './audioedit.js';
-import { startRecording, releaseMic, playClip, stopClip, decode, toWav, fmtDur, importAudio, playSound, stopSounds, startMusic, stopMusic, SAMPLE_RATE } from './voice.js';
+import { startRecording, releaseMic, playClip, stopClip, decode, toWav, fmtDur, importAudio, playSound, stopSounds, startMusic, stopMusic, SAMPLE_RATE, onClipStart, nowPlaying } from './voice.js';
 import { wavBytes } from './audiofx.js';
 import { trimVideo } from './trimvideo.js';
 import { THEMES, STYLES, loadLook, saveLook, applyLook, themeSwatch, TEXT_ROLES, applySlideTheme, applyRole, slideSwatch, slidePalette } from './themes.js';
@@ -936,6 +936,19 @@ for (const [btn, box, after] of [['#snapBtn', '#snap', () => {}], ['#ghostBtn', 
   });
 }
 
+let slidePlaying = null;
+// While narration plays, its block in the timeline fills up to show how far through it is.
+onClipStart(() => {
+  const tick = () => {
+    const np = nowPlaying();
+    for (const el of document.querySelectorAll('#timeline .vblk[data-asset]')) {
+      const on = np && project.assets?.[el.dataset.asset] === np.asset;
+      el.querySelector('i').style.width = on ? (np.progress * 100).toFixed(1) + '%' : '0';
+    }
+    if (np) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+});
 const commands = {
   new() { edit(() => { project = { title: 'Untitled lesson', bg: '#0e1116', version: 1, slides: [{ id: uid(), name: 'Slide 1', notes: '', objects: [] }] }; cur = 0; setSelection([]); }); renderAll(); toast('Started a new lesson. Undo (Ctrl+Z) brings the old one back.'); },
   demo() { edit(() => { project = demoProject(); cur = 0; setSelection([]); }); renderAll(); },
@@ -948,18 +961,23 @@ const commands = {
   addSlide() { addSlide(false); },
   dupSlide() { addSlide(true); },
   async play() {
+    // Pressing Play slide again while it plays stops it, rather than starting a second run.
+    if (slidePlaying) { slidePlaying.stopped = true; player.stop(); stopClip(); stopSounds(); return; }
+    const run = (slidePlaying = { stopped: false });
     const beats = timeline(project).filter((b) => b.slide === cur);
     let state = stateBefore(beats[0]);
     $('#objLayer').style.opacity = 0; $('#ghostLayer').style.opacity = 0; $('#overlay').style.display = 'none';
     for (const b of beats) {
+      if (run.stopped) break;
       const t0 = performance.now();
       const v = playClip(project.assets?.[b.voice]);
       playSounds(b);
       stageVideos.sync(videosIn(applyBeat(state, b)), project.assets, enteringIds(b));
       state = await player.play(state, b);
-      if (!state) { stopClip(); stopSounds(); break; }
+      if (!state || run.stopped) { stopClip(); stopSounds(); break; }
       await v; await sleep(Math.max(150, Math.max(b.hold, b.clip || 0) * 1000 - (performance.now() - t0)));
     }
+    slidePlaying = null;
     stageVideos.clear();
     $('#objLayer').style.opacity = ''; $('#ghostLayer').style.opacity = ''; $('#overlay').style.display = '';
     renderStage();
@@ -1384,7 +1402,7 @@ function renderTimeline() {
     const live = recording && recording.slide === s.id && recording.step === k;
     h += `<div class="tl-cell tl-voice" data-step="${k}">` + (live
       ? `<button class="tl-rec live" data-recstop title="Stop recording"><i class="lvl"></i>${icon('square')}<span>0.0 s</span></button>`
-      : a ? `<span class="vblk" data-voice="${k}" title="${s.captions?.[k] ? escapeHTML(s.captions[k]) + '\n\n' : ''}Narration for click ${k}: click to play, re-record or add a caption"><i style="width:${Math.min(100, 12 + a.dur * 8)}%"></i>${icon('volume-2')}${fmtDur(a.dur)}${s.captions?.[k] ? '<b class="cc">CC</b>' : ''}</span>`
+      : a ? `<span class="vblk" data-voice="${k}" data-asset="${s.voice[k]}" title="${s.captions?.[k] ? escapeHTML(s.captions[k]) + '\n\n' : ''}Narration for click ${k}: click to play, re-record or add a caption"><i></i>${icon('volume-2')}${fmtDur(a.dur)}${s.captions?.[k] ? '<b class="cc">CC</b>' : ''}</span>`
         : `<button class="tl-rec" data-rec="${k}" title="Record narration for ${k <= maxStep ? 'click ' + k : 'a new click'}" aria-label="Record narration for click ${k}">${icon('mic')}<span>Record</span></button>` +
           `<button class="tl-rec tl-imp" data-voicefile="${k}" title="Use an audio file as the narration for ${k <= maxStep ? 'click ' + k : 'a new click'}" aria-label="Narration from a file for click ${k}">${icon('upload')}</button>`) + '</div>';
   }
@@ -1393,7 +1411,7 @@ function renderTimeline() {
   for (let k = 1; k <= cols; k++) {
     h += `<div class="tl-cell tl-voice tl-sound" data-step="${k}">` + (sounds[k] || []).map((sd, i) => {
       const a = project.assets?.[sd.asset];
-      return a ? `<span class="vblk sblk" data-sound="${k}" data-i="${i}" title="${escapeHTML(a.name || 'Sound')} · ${fmtDur(a.dur)}: click to play, change its volume or remove it"><i style="width:${Math.min(100, 12 + a.dur * 8)}%"></i>${icon('volume-2')}<span>${escapeHTML(soundName(a))}</span></span>` : '';
+      return a ? `<span class="vblk sblk" data-sound="${k}" data-i="${i}" title="${escapeHTML(a.name || 'Sound')} · ${fmtDur(a.dur)}: click to play, change its volume or remove it">${icon('volume-2')}<span>${escapeHTML(soundName(a))}</span></span>` : '';
     }).join('') + `<button class="tl-rec tl-addsound" data-addsound="${k}" title="Add a sound effect to ${k <= maxStep ? 'click ' + k : 'a new click'}" aria-label="Add a sound to click ${k}">${icon('plus')}<span>${(sounds[k] || []).length ? '' : 'Sound'}</span></button></div>`;
   }
   const row = (o, gone, inGroup) => {

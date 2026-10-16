@@ -99,18 +99,34 @@ export async function importAudio(file) {
 }
 
 // Play a clip; resolves when it ends or is stopped.
-let current = null;
+// Narration plays through one shared audio element, so a new clip always replaces the one
+// playing (two clips can never overlap) and iOS, which only lets a page start sound from a
+// tap, keeps letting it play once the first clip started from one.
+let narr = null, current = null, finish = null, playingAsset = null;
+let onStart = () => {};
+// fn(asset) runs whenever a narration clip starts.
+export const onClipStart = (fn) => { onStart = fn; };
 export function playClip(asset) {
   stopClip();
   if (!asset) return Promise.resolve();
-  const a = new Audio(assetURL(asset));
-  current = a;
+  narr ||= new Audio();
+  const a = narr;
   return new Promise((resolve) => {
-    a.onended = a.onerror = a.onpause = () => { if (current === a) current = null; resolve(); };
-    a.play().catch(() => resolve());
+    let timer = 0;
+    const done = () => { if (finish !== done) return; finish = null; current = null; playingAsset = null; clearTimeout(timer); a.onended = a.onerror = null; resolve(); };
+    finish = done; current = a; playingAsset = asset;
+    a.onended = a.onerror = done;
+    a.src = assetURL(asset);
+    // A stalled clip doesn't hold the slide up forever.
+    timer = setTimeout(done, ((asset.dur || 0) + 2) * 1000);
+    a.play().catch(done);
+    onStart(asset);
   });
 }
-export function stopClip() { if (current) { const a = current; current = null; a.pause(); } }
+// The narration clip playing and how far through it is (0..1), or null when none is playing.
+export const nowPlaying = () => (current ? { asset: playingAsset, progress: clipProgress() } : null);
+const clipProgress = () => (current && current.duration > 0 && Number.isFinite(current.duration) ? current.currentTime / current.duration : current ? 0 : null);
+export function stopClip() { if (narr) narr.pause(); finish?.(); }
 
 export const fmtDur = (s) => (s >= 60 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : `${s.toFixed(1)} s`);
 
